@@ -10,8 +10,7 @@
         hat weiterhin seine eigene pom.xml mit spring-boot-starter-parent,
         keiner von ihnen referenziert dieses POM als <parent>. Dieses POM
         existiert nur, damit "mvn clean test" im Repository-Root alle
-        Module in einem Durchlauf baut (siehe docs/plan-batch-writer.md,
-        Schritt 1, und ARCHITECTURE.md, Punkt 4 und 8).
+        Module in einem Durchlauf baut.
     -->
     <groupId>ch.m321.chatapp</groupId>
     <artifactId>chat-app-build</artifactId>

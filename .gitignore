@@ -1,3 +1,20 @@
+# Build
+target/
+build/
+out/
+node_modules/
+dist/
+
+# IDE
 .idea/
 *.iml
-target/
+.vscode/
+
+# Betriebssystem
+.DS_Store
+
+# Lokale Geheimnisse
+.env
+
+# Playwright-Prüfartefakte
+.playwright-mcp/

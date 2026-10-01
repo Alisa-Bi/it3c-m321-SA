@@ -1,0 +1,18 @@
+spring:
+  application:
+    name: chat-service
+  rabbitmq:
+    # Im Docker-Netz heisst der Broker "rabbitmq". Beim Start ausserhalb
+    # von Docker greift der Vorgabewert "localhost".
+    host: ${RABBITMQ_HOST:localhost}
+    port: 5672
+    username: ${RABBITMQ_USER:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+server:
+  port: 8080
+
+logging:
+  level:
+    # Im Unterricht wollen wir jeden Schritt sehen.
+    ch.benedict.m321: DEBUG

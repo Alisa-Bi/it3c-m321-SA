@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat-App M321 — Planung</title>
+<style>
+  :root{
+    --paper:#F6F7F4; --card:#FFFFFF; --ink:#0E1512; --muted:#5A625C; --faint:#8A928B;
+    --hair:#E3E7E1; --hair-2:#EDF0EB;
+    --accent:#0C6E48; --accent-soft:#E7F1EB; --accent-ink:#0A5638;
+    --draft:#7A827C; --sent:#2A5D9F; --paid:#0C6E48; --cancel:#B23A3A; --lock:#9A6B08;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SF Mono","SFMono-Regular",Menlo,"Cascadia Mono",Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0}
+  .doc{background:var(--paper);color:var(--ink);font-family:var(--sans);
+    font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;padding:0 20px 120px}
+  .doc :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  .wrap{max-width:940px;margin:0 auto}
+  .measure{max-width:66ch}
+
+  .topbar{position:sticky;top:0;z-index:20;background:rgba(246,247,244,.86);
+    backdrop-filter:saturate(1.2) blur(8px);border-bottom:1px solid var(--hair);margin:0 -20px 0;padding:12px 20px}
+  .topbar .wrap{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .brand{font-weight:680;letter-spacing:-.01em;font-size:15px;display:flex;align-items:center;gap:9px}
+  .brand .mk{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:6px;
+    background:var(--accent);color:#fff;font-size:12px;font-weight:700}
+  nav.toc{display:flex;gap:2px;flex-wrap:wrap;margin-left:auto;font-size:12.5px}
+  nav.toc a{color:var(--muted);text-decoration:none;padding:5px 9px;border-radius:6px;
+    font-variant:all-small-caps;letter-spacing:.04em;font-weight:600}
+  nav.toc a:hover{color:var(--accent-ink);background:var(--accent-soft)}
+
+  header.hero{padding:56px 0 30px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--accent-ink);font-weight:600;margin:0 0 14px}
+  h1{font-size:40px;line-height:1.08;letter-spacing:-.022em;font-weight:720;margin:0;text-wrap:balance}
+  .sub{color:var(--muted);font-size:18px;margin:16px 0 0;max-width:60ch}
+  .metaline{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px;font-size:13px;color:var(--muted)}
+  .chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--hair);
+    background:var(--card);border-radius:999px;padding:5px 12px;font-weight:500}
+  .chip .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  .chip.info .dot{background:var(--sent)}
+  .chip.warn .dot{background:var(--lock)}
+
+  section{padding:40px 0;border-top:1px solid var(--hair);scroll-margin-top:64px}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--faint);font-weight:600;margin:0 0 8px;display:flex;align-items:center;gap:10px}
+  .kicker .n{color:var(--accent);font-weight:700}
+  h2{font-size:26px;letter-spacing:-.018em;font-weight:700;margin:0 0 6px;text-wrap:balance}
+  h3{font-size:16px;font-weight:680;letter-spacing:-.005em;margin:26px 0 10px}
+  p{margin:12px 0}
+  .lead{color:var(--muted);font-size:17px;margin-top:4px}
+  strong{font-weight:660}
+  code{font-family:var(--mono);font-size:.88em;background:var(--hair-2);padding:1px 6px;border-radius:5px}
+  .mono{font-family:var(--mono)}
+
+  .cards{display:grid;gap:14px}
+  @media(min-width:620px){.cards.two{grid-template-columns:1fr 1fr}.cards.three{grid-template-columns:repeat(3,1fr)}}
+  .card{background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:18px}
+  .card h4{margin:0 0 4px;font-size:15px;font-weight:680}
+  .card p{margin:6px 0 0;font-size:14px;color:var(--muted)}
+  .card .big{font-family:var(--mono);font-size:26px;font-weight:700;color:var(--accent-ink);letter-spacing:-.02em}
+
+  .decision{background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:16px 18px;margin:12px 0}
+  .decision .q{display:flex;gap:12px;align-items:baseline}
+  .decision .q .id{font-family:var(--mono);font-weight:700;color:var(--accent);font-size:13px;flex:none;width:22px}
+  .decision .q h4{margin:0;font-size:15.5px;font-weight:680}
+  .opts{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0 0 34px}
+  .opt{font-size:12.5px;border:1px solid var(--hair);border-radius:999px;padding:4px 11px;color:var(--faint);
+    display:inline-flex;align-items:center;gap:6px;background:var(--paper)}
+  .opt.pick{color:var(--accent-ink);border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+  .opt.pick::before{content:"✓";font-weight:700;font-size:11px}
+  .opt::before{content:"○";color:#C4CBC4;font-size:11px}
+  .note{margin:10px 0 0 34px;font-size:13px;color:var(--muted);border-left:2px solid var(--accent);padding-left:12px}
+
+  .pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11.5px;font-weight:600;
+    letter-spacing:.02em;padding:3px 9px;border-radius:6px;text-transform:uppercase;white-space:nowrap}
+  .p-draft{color:var(--draft);background:#F0F2EF;border:1px solid #DFE3DE}
+  .p-info{color:var(--sent);background:#EAF1FA;border:1px solid #D3E1F2}
+  .p-good{color:var(--paid);background:var(--accent-soft);border:1px solid #CDE5D8}
+  .p-bad{color:var(--cancel);background:#FAEDED;border:1px solid #F1D6D6}
+  .p-warn{color:var(--lock);background:#FAF3E0;border:1px solid #EFE1BE}
+
+  pre.code{background:#0E1512;color:#E8ECE7;border-radius:12px;padding:18px;overflow-x:auto;
+    font-family:var(--mono);font-size:13px;line-height:1.65;margin:14px 0}
+  pre.code .k{color:#7FD8A6} pre.code .c{color:#8A928B} pre.code .a{color:#F0C674}
+
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:14px 0;display:grid;gap:9px}
+  ol.steps li{counter-increment:s;position:relative;padding:12px 14px 12px 46px;background:var(--card);
+    border:1px solid var(--hair);border-radius:10px;font-size:14px}
+  ol.steps li::before{content:counter(s);position:absolute;left:12px;top:11px;width:22px;height:22px;
+    background:var(--accent);color:#fff;border-radius:6px;display:grid;place-items:center;
+    font-family:var(--mono);font-size:12px;font-weight:700}
+
+  .tablewrap{overflow-x:auto;margin:14px 0;border:1px solid var(--hair);border-radius:12px}
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:520px;background:var(--card)}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--hair-2);vertical-align:top}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);font-weight:600;background:#FBFCFA}
+  tr:last-child td{border-bottom:none}
+  td .mono{font-size:12.5px;color:var(--accent-ink)}
+  .tag{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.03em}
+  .tag.a{color:var(--sent);background:#EAF1FA} .tag.b{color:var(--accent-ink);background:var(--accent-soft)}
+
+  .callout{border:1px solid var(--hair);border-left:3px solid var(--accent);background:var(--card);
+    border-radius:0 12px 12px 0;padding:16px 18px;margin:16px 0}
+  .callout.warn{border-left-color:var(--lock)}
+  .callout .lb{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:var(--accent-ink);margin:0 0 6px}
+  .callout.warn .lb{color:var(--lock)}
+  .callout p{margin:6px 0 0;font-size:14px;color:var(--ink)}
+
+  .phase{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--hair-2)}
+  .phase:last-child{border-bottom:none}
+  .phase .idx{font-family:var(--mono);font-weight:700;color:var(--accent);font-size:15px;flex:none;width:28px}
+  .phase h4{margin:0;font-size:15px;font-weight:680}
+  .phase p{margin:4px 0 0;font-size:13.5px;color:var(--muted)}
+  .phase .now{font-family:var(--mono);font-size:10px;font-weight:700;color:#fff;background:var(--accent);padding:2px 7px;border-radius:5px;text-transform:uppercase;margin-left:8px;vertical-align:middle}
+  .phase .later{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--faint);background:#EEF1EC;padding:2px 7px;border-radius:5px;text-transform:uppercase;margin-left:8px;vertical-align:middle}
+
+  ul.tick{list-style:none;padding:0;margin:12px 0;display:grid;gap:8px}
+  ul.tick li{position:relative;padding-left:26px;font-size:14.5px}
+  ul.tick li::before{content:"";position:absolute;left:4px;top:8px;width:8px;height:8px;border-radius:2px;background:var(--accent);transform:rotate(45deg)}
+  ul.tick.muted li::before{background:#C4CBC4}
+
+  /* Mermaid-Diagramme auf Kartenfläche, waagerecht scrollbar */
+  .diagram{background:var(--card);border:1px solid var(--hair);border-radius:12px;
+    padding:20px;margin:16px 0;overflow-x:auto}
+  .diagram .mermaid{display:flex;justify-content:center;min-width:0}
+  .diagram .mermaid svg{max-width:100%;height:auto}
+  .figcap{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--faint);font-weight:600;margin:0 0 12px;text-align:center}
+
+  footer.end{padding:44px 0 0;border-top:1px solid var(--hair);color:var(--faint);font-size:13px}
+  .divlabel{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="topbar"><div class="wrap">
+    <span class="brand"><span class="mk">◆</span>M321&nbsp;IT3c&nbsp;·&nbsp;Chat-App</span>
+    <nav class="toc" aria-label="Abschnitte">
+      <a href="#ziel">Ziel</a><a href="#stack">Stack</a><a href="#entscheidungen">Entscheidungen</a>
+      <a href="#architektur">Architektur</a><a href="#fluss">Fluss</a><a href="#last">Mengengerüst</a>
+      <a href="#modell">Modell</a><a href="#reihenfolge">Reihenfolge</a><a href="#offen">Offen</a>
+      <a href="#verlauf">Verlauf</a>
+    </nav>
+  </div></div>
+
+  <div class="wrap">
+
+    <header class="hero">
+      <p class="eyebrow">Planung · Modul M321 · 28.08.2026</p>
+      <h1>Chat-App als verteiltes System</h1>
+      <p class="sub">Microservice-Architektur in <code>docker-compose</code>, Login über Keycloak,
+        RabbitMQ als Puffer für 100'000 Nachrichten pro Minute — und genau ein offener Port.</p>
+      <div class="metaline">
+        <span class="chip"><span class="dot"></span>Klasse IT3c</span>
+        <span class="chip info"><span class="dot"></span>Entwurf abgenommen</span>
+        <span class="chip warn"><span class="dot"></span>9 offene Punkte</span>
+      </div>
+    </header>
+
+    <section id="ziel">
+      <p class="kicker"><span class="n">00</span>&nbsp;Das Ziel</p>
+      <h2>Was gebaut wird — und was daran die eigentliche Aufgabe ist</h2>
+      <p class="lead measure">Eine Chat-Anwendung ist als Funktion trivial. Die Aufgabe von M321 liegt
+        woanders: das System muss <strong>1'667 Nachrichten pro Sekunde</strong> verkraften, ohne dass
+        die Datenbank daran erstickt. Genau dafür existieren die Queue und der Batch-Writer.</p>
+
+      <div class="cards three" style="margin-top:18px">
+        <div class="card"><h4>Der Kerngedanke</h4>
+          <p>Zustellung und Speicherung sind entkoppelt. Die Nachricht ist beim Empfänger,
+            <em>bevor</em> sie in der Datenbank steht.</p></div>
+        <div class="card"><h4>Die harte Vorgabe</h4>
+          <p>Nur die Web-App ist über <code>localhost</code> erreichbar. Im ganzen
+            <code>docker-compose.yml</code> steht genau ein <code>ports:</code>-Eintrag.</p></div>
+        <div class="card"><h4>Der Prüfstein</h4>
+          <p>Skalierung muss <em>sichtbar</em> sein: eine Instanz dazuschalten, und die
+            Queue-Tiefe sinkt vor der Klasse.</p></div>
+      </div>
+
+      <h3>Vorgaben, die nicht zur Diskussion stehen</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Vorgabe</th><th>Konsequenz für den Entwurf</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mono">Java 21</span></td><td>Spring Boot 3.5 auf allen Java-Diensten</td></tr>
+          <tr><td><span class="mono">Keycloak</span></td><td>Kein selbstgebautes Login, kein eigenes Passwort-Handling</td></tr>
+          <tr><td><span class="mono">Message Queues</span></td><td>RabbitMQ als Rückgrat, nicht als Beiwerk</td></tr>
+          <tr><td><span class="mono">docker-compose</span></td><td>Jeder Dienst ein Container, ein einziges <code>up</code> startet alles</td></tr>
+          <tr><td><span class="mono">internes Netzwerk</span></td><td>Dienste sprechen sich über Service-Namen an, nie über <code>localhost</code></td></tr>
+          <tr><td><span class="mono">nur Web-App offen</span></td><td>Genau ein Port-Mapping — Konsequenzen bis in den Login hinein</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="stack">
+      <p class="kicker"><span class="n">01</span>&nbsp;Stack</p>
+      <h2>Technologiewahl</h2>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Baustein</th><th>Wahl</th><th>Begründung</th></tr></thead>
+        <tbody>
+          <tr><td>Sprache</td><td><span class="mono">Java 21</span></td><td>Vorgabe</td></tr>
+          <tr><td>Framework</td><td><span class="mono">Spring Boot 3.5</span></td><td>Starter für AMQP, WebSocket, OAuth2 Resource Server, JDBC</td></tr>
+          <tr><td>Broker</td><td><span class="mono">RabbitMQ 3.13</span></td><td>Queues und Exchanges sind am Whiteboard erklärbar, startet in Sekunden</td></tr>
+          <tr><td>Datenbank</td><td><span class="mono">PostgreSQL 16</span></td><td>Beherrscht Bulk-Inserts und <code>ON CONFLICT</code> sauber</td></tr>
+          <tr><td>IDP</td><td><span class="mono">Keycloak 26</span></td><td>Vorgabe; Realm wird als JSON importiert</td></tr>
+          <tr><td>DB-Zugriff</td><td><span class="mono">JdbcTemplate</span></td><td>Bewusst kein JPA im Batch-Writer — <code>batchUpdate</code> ist genau das, was wir zeigen wollen</td></tr>
+          <tr><td>Web-Client</td><td><span class="mono">React 19 + TS</span></td><td>Macht die Client/Server-Grenze sichtbar, statt sie zu verwischen</td></tr>
+          <tr><td>Desktop-Client</td><td><span class="mono">JavaFX 21</span></td><td>Zweiter Client an derselben API — beweist Clientneutralität</td></tr>
+          <tr><td>Tests</td><td><span class="mono">JUnit 5 + Testcontainers</span></td><td>Echte RabbitMQ- und Postgres-Container im Test</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="entscheidungen">
+      <p class="kicker"><span class="n">02</span>&nbsp;Entscheidungslog</p>
+      <h2>Getroffene Entscheidungen</h2>
+
+      <div class="decision">
+        <div class="q"><span class="id">1</span><h4>Wie viele Clients?</h4></div>
+        <div class="opts">
+          <span class="opt pick">Web und Desktop an derselben API</span>
+          <span class="opt">Nur Web</span>
+          <span class="opt">Web jetzt, Desktop als Kür</span>
+        </div>
+        <p class="note">Der Desktop-Client benutzt denselben Port <span class="mono">8080</span> wie der
+          Browser. Die Ein-Port-Vorgabe steht dem also nicht im Weg — meine gegenteilige Sorge war
+          unbegründet.</p>
+      </div>
+
+      <div class="decision">
+        <div class="q"><span class="id">2</span><h4>Womit wird die Web-App gebaut?</h4></div>
+        <div class="opts">
+          <span class="opt pick">React 19 + TypeScript</span>
+          <span class="opt">Spring Boot + Thymeleaf</span>
+          <span class="opt">Vaadin</span>
+        </div>
+        <p class="note">„M321 dreht sich um verteilte Systeme und Microservices." Ein servergerendertes
+          Frontend verwischt genau die Client/Server-Grenze, die das Modul sichtbar machen soll.</p>
+      </div>
+
+      <div class="decision">
+        <div class="q"><span class="id">3</span><h4>Wie werden die Dienste geschnitten?</h4></div>
+        <div class="opts">
+          <span class="opt pick">web-gateway + chat-service + batch-writer</span>
+          <span class="opt">zusätzlich getrennter Lesedienst (CQRS)</span>
+          <span class="opt">ein einziges Backend</span>
+        </div>
+        <p class="note">Der Batch-Writer ist der <em>einzige</em> Schreiber in die Datenbank — kein
+          Zusatz, sondern der Schreibpfad selbst. Ein separater Lesedienst wurde verworfen: bei
+          „letzte 50 Nachrichten" ist der Lesepfad nie der Engpass.</p>
+      </div>
+
+      <div class="decision">
+        <div class="q"><span class="id">4</span><h4>Welche Message Queue?</h4></div>
+        <div class="opts">
+          <span class="opt pick">RabbitMQ</span>
+          <span class="opt">Apache Kafka</span>
+          <span class="opt">ActiveMQ Artemis</span>
+        </div>
+        <p class="note">Kafka wäre der Industriestandard für Streams, bringt aber ein anderes mentales
+          Modell (Log statt Queue) und mehr Konfiguration mit. Für den Unterricht gewinnt das erklärbare
+          Modell.</p>
+      </div>
+
+      <div class="decision">
+        <div class="q"><span class="id">5</span><h4>Wie wird die Last erzeugt?</h4></div>
+        <div class="opts">
+          <span class="opt pick">load-generator als Container im internen Netz</span>
+          <span class="opt">k6 / JMeter von aussen</span>
+          <span class="opt">keine Lasterzeugung</span>
+        </div>
+        <p class="note">Last von aussen ginge durch den einen offenen Port — dann messen wir das
+          Gateway statt die Architektur.</p>
+      </div>
+
+      <div class="decision">
+        <div class="q"><span class="id">6</span><h4>Welche Zustellgarantie?</h4></div>
+        <div class="opts">
+          <span class="opt pick">At-least-once</span>
+          <span class="opt">At-most-once</span>
+          <span class="opt">Exactly-once anstreben</span>
+        </div>
+        <p class="note">Bestätigt wird erst nach dem COMMIT. Duplikate werden über die UUID mit
+          <code>ON CONFLICT DO NOTHING</code> harmlos gemacht — ohne eine Garantie zu behaupten, die
+          verteilte Systeme so nicht geben.</p>
+      </div>
+
+      <div class="decision">
+        <div class="q"><span class="id">7</span><h4>Wie erreicht der Browser Keycloak?</h4></div>
+        <div class="opts">
+          <span class="opt pick">Reverse-Proxy im Gateway unter /auth</span>
+          <span class="opt">eigener Port für Keycloak</span>
+          <span class="opt">Resource-Owner-Password-Grant</span>
+        </div>
+        <p class="note">Meine Entscheidung, nicht abgefragt — deshalb hier offengelegt. Der
+          Password-Grant käme ohne Proxy aus, unsere Anwendung müsste dafür aber das Passwort des
+          Benutzers anfassen. In einem Modul, das erklärt <em>wozu</em> ein IDP da ist, wäre das das
+          falsche Vorbild.</p>
+      </div>
+
+      <div class="decision">
+        <div class="q"><span class="id">8</span><h4>Wer nimmt die Nachricht vom Benutzer entgegen?</h4></div>
+        <div class="opts">
+          <span class="opt pick">chat-service, das Gateway reicht per REST weiter</span>
+          <span class="opt">Gateway publiziert selbst auf RabbitMQ</span>
+        </div>
+        <p class="note">Nachträglich geändert (siehe Verlauf, Runde 3). Es gibt jetzt genau eine Stelle,
+          die Nachrichten annimmt und die Regeln kennt. Preis: die Eingangs-Queue entfällt, damit auch der
+          Puffer auf dem Sendeweg und die exakte Lastverteilung auf <code>chat-service</code> — offene
+          Punkte 8 und 9.</p>
+      </div>
+    </section>
+
+    <section id="architektur">
+      <p class="kicker"><span class="n">03</span>&nbsp;Architektur</p>
+      <h2>Container und Netzwerk</h2>
+      <p class="measure">Sieben Container, ein internes Netz, ein offener Port. Der
+        <code>load-generator</code> läuft nur unter dem Profil <code>load</code> mit.</p>
+
+      <div class="diagram">
+        <p class="figcap">Abb. 1 — Container-Übersicht</p>
+        <pre class="mermaid">
+flowchart TB
+    subgraph Host["Host-Rechner"]
+        direction LR
+        Browser["Browser<br/>React-SPA"]
+        Desktop["JavaFX-Client"]
+    end
+
+    Browser -->|"localhost:8080"| GW
+    Desktop -->|"localhost:8080"| GW
+
+    subgraph Net["Docker-Netzwerk chat-net · kein Port nach aussen"]
+        GW["web-gateway<br/>REST · WebSocket · Auth-Proxy"]
+        LG["load-generator<br/>Profil 'load'"]
+        MQ[("RabbitMQ")]
+        CS["chat-service<br/>Routing · Fan-out<br/>N Instanzen"]
+        BW["batch-writer<br/>einziger DB-Schreiber<br/>M Instanzen"]
+        DB[("PostgreSQL")]
+        KC["Keycloak"]
+
+        GW -->|"REST: Nachricht<br/>weiterreichen"| CS
+        LG -->|"REST: Last"| CS
+        CS -->|"publish persist + delivery"| MQ
+        MQ -->|"consume delivery"| GW
+        MQ -->|"consume persist"| BW
+        BW -->|"Bulk-INSERT"| DB
+        CS -->|"SELECT Historie"| DB
+        GW -->|"Proxy /auth · JWT prüfen"| KC
+    end
+        </pre>
+      </div>
+
+      <div class="callout"><p class="lb">Bewusste Vereinfachung — Token nur am Gateway prüfen</p>
+        <p>Die inneren Dienste vertrauen dem internen Netz, weil sie von aussen ohnehin nicht erreichbar
+          sind. Ein gängiges Muster („Gateway als einziger Wachposten"), aber eine Entscheidung und kein
+          Naturgesetz. Ausbauweg: <code>chat-service</code> ebenfalls als OAuth2 Resource Server
+          konfigurieren — der JWKS-Endpunkt ist im internen Netz erreichbar. Keycloak bringt seine eigene
+          Datenhaltung mit und benutzt unsere <code>chat</code>-Datenbank nicht.</p></div>
+
+      <div class="callout warn"><p class="lb">Der Widerspruch, den die Ein-Port-Vorgabe erzeugt</p>
+        <p>OpenID Connect leitet den <strong>Browser</strong> zu Keycloak um. Der Browser läuft auf dem
+          Host und erreicht das interne Netz nicht. Lösung: das Gateway reicht <code>/auth/**</code>
+          intern durch, Keycloak läuft mit <code>KC_HTTP_RELATIVE_PATH=/auth</code> und
+          <code>KC_PROXY_HEADERS=xforwarded</code>. Ein Port, echter Authorization Code Flow mit PKCE.</p></div>
+
+      <div class="diagram">
+        <p class="figcap">Abb. 2 — Login-Ablauf</p>
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant G as web-gateway
+    participant K as Keycloak
+
+    B->>G: GET / (nicht angemeldet)
+    G-->>B: Redirect nach /auth/realms/chat (+ PKCE)
+    B->>G: GET /auth/...
+    G->>K: intern weiterleiten
+    K-->>B: Login-Formular
+    B->>K: Benutzername + Passwort
+    K-->>B: Redirect mit Authorization Code
+    B->>G: Code einlösen
+    G->>K: Code gegen Tokens tauschen
+    K-->>G: Access-Token (JWT) + Refresh-Token
+    G-->>B: Access-Token
+    Note over B,G: jeder weitere Aufruf trägt<br/>Authorization: Bearer JWT
+        </pre>
+      </div>
+
+      <h3>Queues und Exchanges</h3>
+      <p class="measure">Der einzige Erzeuger ist der <code>chat-service</code>. Es gibt <strong>keine</strong>
+        Eingangs-Queue — der Sendeweg läuft per REST ins <code>chat-service</code>, nicht über den Broker.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Name</th><th>Typ</th><th>Erzeuger</th><th>Verbraucher</th><th>Zweck</th></tr></thead>
+        <tbody>
+          <tr><td><span class="mono">chat.persist</span></td><td><span class="tag b">Queue</span></td><td>chat-service</td><td>batch-writer (M)</td><td>Schreibpfad in die DB, Competing Consumers</td></tr>
+          <tr><td><span class="mono">chat.delivery</span></td><td><span class="tag a">Fanout</span></td><td>chat-service</td><td>web-gateway</td><td>Zustellpfad an die Clients</td></tr>
+          <tr><td><span class="mono">chat.dlq</span></td><td><span class="tag b">Queue</span></td><td>RabbitMQ</td><td>—</td><td>Dead Letter nach 3 Fehlversuchen</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout"><p class="lb">Warum ein Fanout für die Zustellung</p>
+        <p>Eine WebSocket-Verbindung hängt an genau einer Gateway-Instanz. Also bindet jede Instanz eine
+          <strong>eigene, exklusive</strong> Queue an <code>chat.delivery</code>, sieht jede Nachricht
+          und entscheidet selbst, ob einer ihrer verbundenen Clients sie braucht.</p></div>
+    </section>
+
+    <section id="fluss">
+      <p class="kicker"><span class="n">04</span>&nbsp;Nachrichtenfluss</p>
+      <h2>Der Weg einer Nachricht</h2>
+      <p class="lead measure">Zwei Pfade zweigen im <code>chat-service</code> ab und laufen danach
+        unabhängig weiter. Das ist der Kern des ganzen Projekts.</p>
+
+      <div class="callout"><p class="lb">Wer die Nachricht annimmt</p>
+        <p><strong>Das Gateway spricht auf dem Sendeweg nicht mit RabbitMQ.</strong> Es nimmt die Nachricht
+          über WebSocket entgegen und reicht sie intern per REST an den <code>chat-service</code> weiter.
+          Erst der <code>chat-service</code> legt etwas in eine Queue. Damit gibt es genau <em>eine</em>
+          Stelle im System, die Nachrichten annimmt und die Regeln kennt.</p>
+        <p>Auf dem <em>Rückweg</em> ist das Gateway sehr wohl am Broker: es konsumiert
+          <code>chat.delivery</code> für seine verbundenen Clients. Das Gateway ist also
+          <strong>Consumer, aber kein Producer</strong>.</p></div>
+
+      <div class="diagram">
+        <p class="figcap">Abb. 3 — Senden, Zustellen, Speichern</p>
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant A as Sender
+    participant G as web-gateway
+    participant CS as chat-service
+    participant MQ as RabbitMQ
+    participant BW as batch-writer
+    participant DB as PostgreSQL
+    participant B as Empfänger
+
+    A->>G: WebSocket - sende Nachricht
+    G->>CS: POST /messages (intern, REST)
+    Note over CS: UUID vergeben<br/>Server-Zeitstempel setzen<br/>Empfänger ermitteln
+    CS->>MQ: publish chat.persist
+    CS->>MQ: publish chat.delivery
+    CS-->>G: 202 Accepted
+    G-->>A: bestätigt
+    MQ->>G: consume chat.delivery
+    G->>B: WebSocket - zustellen
+    MQ->>BW: consume chat.persist (bis 500 Stück)
+    BW->>DB: ein einziger Bulk-INSERT
+    DB-->>BW: COMMIT
+    BW->>MQ: ACK für den ganzen Stapel
+        </pre>
+      </div>
+
+      <h3>Der Batch-Writer im Detail</h3>
+      <div class="diagram">
+        <p class="figcap">Abb. 4 — At-least-once beim Schreiben</p>
+        <pre class="mermaid">
+flowchart TD
+    S["Nachricht aus chat.persist<br/>prefetch = 500"] --> P["in den Puffer legen"]
+    P --> C{"500 Stück oder<br/>200 ms erreicht?"}
+    C -->|nein| S
+    C -->|ja| I["ein Bulk-INSERT<br/>ON CONFLICT DO NOTHING"]
+    I --> T{"COMMIT erfolgreich?"}
+    T -->|ja| A["ACK für den ganzen Stapel"]
+    T -->|nein| N["NACK mit requeue"]
+    A --> S
+    N --> R["RabbitMQ liefert erneut"]
+    R --> S
+        </pre>
+      </div>
+
+      <pre class="code"><span class="c">// Bestätigt wird erst nach dem COMMIT — deshalb geht nichts verloren,</span>
+<span class="c">// und deshalb sind Duplikate möglich.</span>
+<span class="k">ack</span>(stapel) <span class="a">&lt;=&gt;</span> commit(stapel) == OK
+
+<span class="c">// Duplikate werden beim Einfügen verworfen, nicht verhindert:</span>
+INSERT INTO message (...) VALUES (...) <span class="a">ON CONFLICT</span> (id) <span class="a">DO NOTHING</span></pre>
+
+      <div class="callout warn"><p class="lb">Was wir dabei nicht behaupten</p>
+        <p>Das ist <strong>kein</strong> Exactly-once. Wir garantieren nur, dass ein Duplikat keinen
+          Schaden anrichtet. Der Unterschied gehört im Unterricht ausgesprochen.</p></div>
+    </section>
+
+    <section id="last">
+      <p class="kicker"><span class="n">05</span>&nbsp;Mengengerüst</p>
+      <h2>Die Rechnung hinter der Architektur</h2>
+
+      <div class="cards three" style="margin-top:18px">
+        <div class="card"><p class="big">1'667</p><h4>Nachrichten pro Sekunde</h4>
+          <p>100'000 pro Minute, umgerechnet.</p></div>
+        <div class="card"><p class="big">3,3</p><h4>Bulk-Inserts pro Sekunde</h4>
+          <p>bei 500 Nachrichten je Stapel.</p></div>
+        <div class="card"><p class="big">×500</p><h4>weniger Transaktionen</h4>
+          <p>Das ist der ganze Trick.</p></div>
+      </div>
+
+      <div class="tablewrap"><table>
+        <thead><tr><th>Grösse</th><th>Wert</th><th>Anmerkung</th></tr></thead>
+        <tbody>
+          <tr><td>Zielrate</td><td><span class="mono">100'000 / min</span></td><td>Vorgabe aus der Planungsrunde</td></tr>
+          <tr><td>entspricht</td><td><span class="mono">1'667 / s</span></td><td>—</td></tr>
+          <tr><td>Stapelgrösse</td><td><span class="mono">500 oder 200 ms</span></td><td>was zuerst eintritt</td></tr>
+          <tr><td>Bulk-Inserts</td><td><span class="mono">~3,3 / s</span></td><td>statt 1'667 Einzel-Inserts</td></tr>
+          <tr><td>Datenvolumen</td><td><span class="mono">~1,2 GB / h</span></td><td>bei ~200 Byte je Nachricht — <span class="pill p-warn">ungelöst</span></td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>Skalierung sichtbar machen</h3>
+      <pre class="code"><span class="c"># Grundsystem</span>
+docker compose up -d
+
+<span class="c"># Last erzeugen (eigenes Profil, läuft nicht immer mit)</span>
+docker compose --profile load up -d load-generator
+
+<span class="c"># und jetzt live dazuschalten</span>
+docker compose up -d --scale chat-service=3 --scale batch-writer=2</pre>
+
+      <p class="measure">Die beiden Dienste skalieren auf <strong>unterschiedlichen Wegen</strong>, und
+        dieser Unterschied ist selbst Lehrstoff:</p>
+      <ul class="tick">
+        <li><strong><code>batch-writer</code></strong> hängt an <code>chat.persist</code>. Alle Instanzen
+          teilen sich dieselbe Queue, RabbitMQ verteilt reihum — <strong>Competing Consumers</strong>,
+          Lastverteilung durch den Broker, exakt und ohne Zutun.</li>
+        <li><strong><code>chat-service</code></strong> wird per REST aufgerufen. Verteilt wird über das
+          DNS von Docker Compose. Das funktioniert, ist aber <em>ungenauer</em>: ein HTTP-Client mit
+          Verbindungspool merkt sich gern die erste Adresse. Gegenmittel: Keep-Alive begrenzen oder pro
+          Anfrage neu auflösen (offener Punkt 8).</li>
+      </ul>
+      <p class="measure">Das ist der Preis dafür, den Sendeweg per REST zu führen statt über eine
+        Eingangs-Queue: Der im Betrieb sichtbare Skalierungseffekt bleibt am <code>batch-writer</code> —
+        und der ist für die 100k/min-Geschichte ohnehin die interessantere Stelle.</p>
+
+      <p class="measure">Damit man den Effekt <em>sieht</em>, holt das Gateway die
+        Queue-Tiefe intern über die RabbitMQ-Management-API und zeigt sie in der React-App als Balken.
+        Die Management-Oberfläche selbst bleibt geschlossen: die Vorgabe „nur die Web-App" gilt auch für
+        bequeme Werkzeuge.</p>
+    </section>
+
+    <section id="modell">
+      <p class="kicker"><span class="n">06</span>&nbsp;Datenmodell</p>
+      <h2>Drei Tabellen, keine Benutzerverwaltung</h2>
+
+      <div class="diagram">
+        <p class="figcap">Abb. 5 — Datenmodell</p>
+        <pre class="mermaid">
+erDiagram
+    ROOM ||--o{ ROOM_MEMBER : hat
+    ROOM ||--o{ MESSAGE : enthaelt
+
+    ROOM {
+        uuid id PK
+        varchar name
+        timestamptz created_at
+    }
+    ROOM_MEMBER {
+        uuid room_id FK
+        varchar user_id
+        timestamptz joined_at
+    }
+    MESSAGE {
+        uuid id PK
+        uuid room_id FK
+        varchar sender_id
+        varchar sender_name
+        text content
+        timestamptz sent_at
+    }
+        </pre>
+      </div>
+
+      <h3>Was dabei gilt</h3>
+      <ul class="tick">
+        <li>Benutzer werden <strong>nicht</strong> bei uns verwaltet — dafür ist Keycloak da. Wir speichern
+          nur die <code>sub</code>-Kennung.</li>
+        <li><code>sender_name</code> ist bewusst denormalisiert: die Historie bleibt lesbar, auch wenn ein
+          Konto später gelöscht wird.</li>
+        <li><code>message.id</code> ist Primärschlüssel und kommt vom <code>chat-service</code> — das ist
+          die Grundlage der Duplikat-Abwehr.</li>
+        <li>Ein einziger Index: <code>message(room_id, sent_at DESC)</code>. Es gibt genau eine Leseabfrage.</li>
+      </ul>
+    </section>
+
+    <section id="reihenfolge">
+      <p class="kicker"><span class="n">07</span>&nbsp;Baureihenfolge</p>
+      <h2>Sieben Schritte</h2>
+      <div class="phase"><span class="idx">1</span><div><h4>Gerüst <span class="now">zuerst</span></h4>
+        <p><code>docker-compose.yml</code> mit RabbitMQ, Postgres, Keycloak; Maven-Elternprojekt. Ohne laufende Infrastruktur kann niemand etwas testen.</p></div></div>
+      <div class="phase"><span class="idx">2</span><div><h4>Login <span class="now">zuerst</span></h4>
+        <p>Keycloak-Realm, Gateway mit Proxy und JWT-Prüfung, React zeigt den Benutzernamen. Auth zuerst — sonst wird es nachträglich eingebaut und ist dann falsch.</p></div></div>
+      <div class="phase"><span class="idx">3</span><div><h4>Ein Weg durch <span class="now">Meilenstein</span></h4>
+        <p>Nachricht vom Browser bis zum zweiten Browser, noch ohne Datenbank. Der kürzeste Weg zu etwas Sichtbarem — der wichtigste Punkt im ganzen Plan.</p></div></div>
+      <div class="phase"><span class="idx">4</span><div><h4>Persistenz</h4>
+        <p><code>batch-writer</code> mit Bulk-Insert, Historie beim Öffnen eines Raums. Jetzt ist der Nutzen der Entkopplung erklärbar.</p></div></div>
+      <div class="phase"><span class="idx">5</span><div><h4>Last</h4>
+        <p><code>load-generator</code>, Queue-Tiefe in der Oberfläche. Erst jetzt gibt es etwas zu messen.</p></div></div>
+      <div class="phase"><span class="idx">6</span><div><h4>Skalieren</h4>
+        <p><code>--scale</code>, Competing Consumers, Messreihe. Der eigentliche Lernstoff von M321.</p></div></div>
+      <div class="phase"><span class="idx">7</span><div><h4>Desktop <span class="later">Kür</span></h4>
+        <p>JavaFX-Client an derselben API. Beweist die Clientneutralität des Backends.</p></div></div>
+    </section>
+
+    <section id="offen">
+      <p class="kicker"><span class="n">08</span>&nbsp;Offene Punkte</p>
+      <h2>Was noch ungelöst ist</h2>
+      <p class="lead measure">Ehrlich benannt statt weggeschwiegen. Punkt 3 und 7 sind die dringenden.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>#</th><th>Punkt</th><th>Stand</th><th>Möglicher Weg</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><strong>Gateway skaliert nicht</strong></td><td><span class="pill p-warn">bewusst</span> WebSocket klebt an einer Instanz</td><td>nginx als Lastverteiler mit Sticky Sessions — wäre ein achter Container, zurückgestellt</td></tr>
+          <tr><td>2</td><td><strong>DB wächst um 1,2 GB/h</strong></td><td><span class="pill p-bad">ungelöst</span></td><td>Partitionierung nach Tag, oder Aufräum-Job für Nachrichten älter als X</td></tr>
+          <tr><td>3</td><td><strong>Reihenfolge der Nachrichten</strong></td><td><span class="pill p-bad">ungelöst</span> bei N chat-service-Instanzen nicht garantiert</td><td>über <code>room_id</code>-Hash konsistent routen, oder im Client nach <code>sent_at</code> sortieren — Zweiteres ist einfacher und für einen Chat gut genug</td></tr>
+          <tr><td>4</td><td><strong>Login im JavaFX-Client</strong></td><td><span class="pill p-info">Konzept</span> nicht erprobt</td><td>System-Browser öffnen, Rückleitung auf <code>127.0.0.1:&lt;Port&gt;/callback</code> nach RFC 8252</td></tr>
+          <tr><td>5</td><td><strong>Keycloak-Admin-Oberfläche</strong></td><td><span class="pill p-good">so gewollt</span> nicht erreichbar</td><td>Realm als JSON-Import; für Änderungen <code>docker compose exec</code> oder eine dokumentierte Override-Datei</td></tr>
+          <tr><td>6</td><td><strong>Rechte und Rollen</strong></td><td><span class="pill p-draft">offen</span></td><td>Vorschlag: Keycloak-Rollen <code>user</code> und <code>admin</code>; nur <code>admin</code> sieht die Queue-Tiefe</td></tr>
+          <tr><td>7</td><td><strong>Wirklich 100k/min auf einem Laptop?</strong></td><td><span class="pill p-bad">unbewiesen</span></td><td>Muss gemessen werden. Realistischer Engpass ist RabbitMQ mit persistenten Nachrichten, nicht die Datenbank</td></tr>
+          <tr><td>8</td><td><strong>Lastverteilung auf chat-service</strong></td><td><span class="pill p-bad">neu</span> durch den REST-Sendeweg</td><td>Docker-DNS verteilt, ein HTTP-Verbindungspool umgeht das. Keep-Alive begrenzen oder pro Anfrage neu auflösen — und messen, sonst glaubt man an eine Verteilung, die nicht stattfindet</td></tr>
+          <tr><td>9</td><td><strong>Kein Puffer auf dem Sendeweg</strong></td><td><span class="pill p-warn">bewusst</span> neu</td><td>Ist der <code>chat-service</code> unten, schlägt das Senden sofort fehl. Der Client muss das sichtbar machen („Nachricht nicht gesendet") statt sie stillschweigend zu verlieren</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout"><p class="lb">Zu Punkt 7</p>
+        <p>Fällt die Messung schlecht aus, ist das ein <strong>Ergebnis</strong> und kein Misserfolg. Ein
+          gemessener Engpass mit Begründung ist mehr wert als eine Zahl, die niemand geprüft hat.</p></div>
+    </section>
+
+    <section id="verlauf">
+      <p class="kicker"><span class="n">09</span>&nbsp;Verlauf</p>
+      <h2>Wie diese Planung zustande kam</h2>
+      <p class="lead measure">Von der KI geschrieben, inklusive der Stellen, an denen sie falsch lag.</p>
+
+      <h3>Ausgangslage</h3>
+      <p class="measure">Ein leeres Projektverzeichnis, ein Foto des Flipcharts und der Aufgabentext. Aus
+        dem Flipchart waren Stack und die Kästen WEB, MQ, Backend, IDP, DB sowie ein gestrichelter Kasten
+        „Batches" ablesbar. Der gestrichelte Rahmen hat mich in die Irre geführt — ich habe ihn als
+        <em>optional</em> gelesen.</p>
+
+      <h3>Runde 1 — vier Fragen, die den Entwurf verzweigen</h3>
+      <ol class="steps">
+        <li><strong>UI-Umfang.</strong> Ich empfahl „nur Web" und zeigte einen vermeintlichen Widerspruch
+          auf: ein Desktop-Client könne kein Backend erreichen, wenn nur die Web-App einen Port hat.
+          → <strong>Entschieden: Web und Desktop.</strong> Der Widerspruch löst sich, weil der
+          Desktop-Client denselben Port benutzt. Meine Empfehlung war damit hinfällig.</li>
+        <li><strong>Web-Frontend.</strong> Ich empfahl Thymeleaf mit dem Argument „alles in einer Sprache".
+          → <strong>Entschieden: React.</strong> Begründung: <em>„M321 dreht sich um verteilte Systeme und
+          Microservices."</em> Das ist der stärkere Punkt.</li>
+        <li><strong>Service-Schnitt.</strong> Drei Varianten angeboten, alle mit dem Batch-Service als
+          optionalem Extra. → <strong>Alle drei verworfen.</strong> Korrektur: <em>„Batch Service ist fürs
+          Schreiben auf die DB (die Applikation soll ein skaliertes System mit 100k+ Nachrichten pro Minute
+          zeigen)."</em></li>
+        <li><strong>Message Queue.</strong> → RabbitMQ, wie empfohlen.</li>
+      </ol>
+
+      <div class="callout"><p class="lb">Der Wendepunkt</p>
+        <p>Antwort 3 hat die Planung neu ausgerichtet. Bis dahin war die Queue ein Transportweg und der
+          Batch-Service ein nettes Extra. Danach war klar: die Queue ist ein <strong>Puffer</strong>, der
+          1'667 Einzelnachrichten pro Sekunde in rund 3 Bulk-Inserts verwandelt. Das ganze Mengengerüst
+          gibt es nur wegen dieser einen Korrektur.</p></div>
+
+      <h3>Runde 2 — vier Folgefragen auf neuer Grundlage</h3>
+      <ul class="tick">
+        <li><strong>Service-Schnitt, neu gestellt</strong> → drei eigene Dienste. Die CQRS-Variante wurde
+          verworfen: ein Container mehr für einen Lesepfad, der nie der Engpass ist.</li>
+        <li><strong>Lasterzeugung</strong> → eigener Container. k6 von aussen verworfen, weil wir sonst das
+          Gateway messen statt die Architektur.</li>
+        <li><strong>Skalierung</strong> → Competing Consumers per <code>--scale</code>. Feste Instanzzahlen
+          verworfen, weil das Dazuschalten im Betrieb genau der Lernmoment ist.</li>
+        <li><strong>Zustellgarantie</strong> → At-least-once. Exactly-once als <em>Anspruch</em> verworfen.</li>
+      </ul>
+
+      <h3>Runde 3 — Korrektur nach der ersten Fassung</h3>
+      <p class="measure">Nach dem Lesen des ersten Entwurfs kam der Einwand, das Gateway dürfe nicht selbst
+        auf RabbitMQ schreiben — die Nachricht solle der <code>chat-service</code> vom Benutzer
+        entgegennehmen.</p>
+      <p class="measure">Zur Genauigkeit gehört: In diesem Gespräch hatte ich das nicht abgeraten, sondern
+        in Runde 1 ausdrücklich „Web schickt Nachricht in die Queue" empfohlen. Abgeraten hatte ich von der
+        <strong>Zwei-Service-Variante</strong> („das Gateway macht dann zu viel auf einmal"). Das liegt nah
+        beieinander und wurde vermutlich verwechselt — oder es kam aus der mündlichen Diskussion mit der
+        Klasse.</p>
+      <p class="measure"><strong>Geändert wurde es trotzdem, und der Einwand hat einen guten Kern:</strong>
+        Es gibt jetzt genau eine Stelle, die Nachrichten annimmt und die Regeln kennt. Das Gateway ist
+        reiner Übersetzer zwischen WebSocket und interner API.</p>
+
+      <div class="callout warn"><p class="lb">Was die Änderung gekostet hat</p>
+        <p><strong>1.</strong> Die Queue <code>chat.incoming</code> ist weggefallen. Damit fehlt auf dem
+          Sendeweg der Puffer: ist der <code>chat-service</code> unten, schlägt das Senden sofort fehl,
+          statt in einer Queue zu warten.</p>
+        <p><strong>2.</strong> Der Skalierungs-Versuch <code>--scale chat-service=3</code> läuft nicht mehr
+          über Competing Consumers, sondern über Docker-DNS — ungenauer und schwerer zu zeigen. Der saubere
+          Queue-Effekt bleibt am <code>batch-writer</code>.</p>
+        <p>Beides ist verkraftbar; für ein Unterrichtsprojekt wiegt die klare Zuständigkeit schwerer als der
+          zusätzliche Puffer. Aber es ist ein Tausch und kein Gratis-Gewinn.</p></div>
+
+      <h3>Selbst entschieden und offengelegt</h3>
+      <p class="measure">Der <strong>Keycloak-Proxy</strong> war keine Frage, sondern meine Entscheidung —
+        als solche gekennzeichnet und zur Bestätigung vorgelegt (siehe Entscheidung 7).</p>
+      <p class="measure">Ohne Rückfrage gesetzt, jederzeit änderbar: PostgreSQL, Spring Boot,
+        <code>JdbcTemplate</code> statt JPA im Batch-Writer, Stapelgrösse 500 / 200 ms,
+        Maven-Multi-Modul-Struktur, React-Build in das Gateway hinein statt als eigener nginx-Container.</p>
+
+      <div class="callout warn"><p class="lb">Was ich falsch hatte</p>
+        <p><strong>1.</strong> Den gestrichelten Kasten „Batches" als optionales Extra gelesen — er ist der
+          Kern des Schreibpfads. <strong>2.</strong> Thymeleaf empfohlen und dabei Unterrichtsaufwand über
+          das Lernziel gestellt. <strong>3.</strong> Den Desktop-Client für unvereinbar mit der
+          Ein-Port-Vorgabe gehalten.</p>
+        <p>Zwei davon hatten dieselbe Ursache: ich habe auf <em>möglichst wenig Reibung</em> optimiert,
+          während das Modul auf <em>möglichst viel sichtbare Verteilung</em> zielt. Das ist die
+          Kalibrierung für den Rest des Projekts.</p></div>
+    </section>
+
+    <footer class="end">
+      <p class="divlabel">M321 · IT3c · Planungsdokument</p>
+      <p>Lebendes Dokument — wird fortgeschrieben, wenn offene Punkte entschieden sind.
+        Markdown-Fassung: <code>PLANUNG.md</code></p>
+    </footer>
+
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
+<script>
+  // Mermaid an die Farbwelt des Dokuments angleichen.
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    securityLevel: 'loose',
+    fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    themeVariables: {
+      primaryColor:       '#E7F1EB',
+      primaryTextColor:   '#0E1512',
+      primaryBorderColor: '#0C6E48',
+      secondaryColor:     '#F6F7F4',
+      tertiaryColor:      '#FBFCFA',
+      lineColor:          '#5A625C',
+      textColor:          '#0E1512',
+      mainBkg:            '#E7F1EB',
+      clusterBkg:         '#FBFCFA',
+      clusterBorder:      '#E3E7E1',
+      nodeBorder:         '#0C6E48',
+      edgeLabelBackground:'#FFFFFF',
+      actorBkg:           '#E7F1EB',
+      actorBorder:        '#0C6E48',
+      actorTextColor:     '#0E1512',
+      signalColor:        '#5A625C',
+      signalTextColor:    '#0E1512',
+      labelBoxBkgColor:   '#E7F1EB',
+      labelBoxBorderColor:'#0C6E48',
+      noteBkgColor:       '#FAF3E0',
+      noteBorderColor:    '#EFE1BE',
+      noteTextColor:      '#0E1512'
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+# Ausbaustufe 1: nur der Broker und der chat-service.
+# Postgres, Keycloak, web-gateway und batch-writer kommen in den
+# folgenden Schritten dazu.
+services:
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    networks:
+      - chat-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  chat-service:
+    build:
+      context: .
+      dockerfile: chat-service/Dockerfile
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - chat-net
+
+# KEIN ports:-Eintrag in dieser Datei. Der einzige offene Port des
+# Gesamtsystems gehört später dem web-gateway.
+networks:
+  chat-net:
+    name: chat-net

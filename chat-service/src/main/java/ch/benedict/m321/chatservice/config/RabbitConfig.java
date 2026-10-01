@@ -1,0 +1,63 @@
+package ch.benedict.m321.chatservice.config;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.amqp.core.FanoutExchange;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * Legt beim Start alles an, was der Broker braucht.
+ *
+ * Spring meldet diese Beans beim Verbindungsaufbau an RabbitMQ. Existiert
+ * eine Queue schon, passiert nichts — das Anlegen ist wiederholbar.
+ */
+@Configuration
+public class RabbitConfig {
+
+    /**
+     * Der Schreibweg. "durable" heisst: die Queue überlebt einen Neustart
+     * des Brokers. Was der Verbraucher endgültig ablehnt, landet über den
+     * Standard-Exchange ("") in der Dead-Letter-Queue.
+     */
+    @Bean
+    public Queue persistQueue() {
+        return QueueBuilder.durable(QueueNames.PERSIST_QUEUE)
+                .deadLetterExchange("")
+                .deadLetterRoutingKey(QueueNames.DEAD_LETTER_QUEUE)
+                .build();
+    }
+
+    /** Das Abstellgleis für Nachrichten, die niemand verarbeiten konnte. */
+    @Bean
+    public Queue deadLetterQueue() {
+        return QueueBuilder.durable(QueueNames.DEAD_LETTER_QUEUE).build();
+    }
+
+    /**
+     * Der Zustellweg. Fanout heisst: JEDE gebundene Queue bekommt eine
+     * Kopie. Das ist genau richtig, weil jede web-gateway-Instanz jede
+     * Nachricht sehen muss — nur sie weiss, welche ihrer WebSocket-Clients
+     * im betroffenen Raum sitzen.
+     */
+    @Bean
+    public FanoutExchange deliveryExchange() {
+        return new FanoutExchange(QueueNames.DELIVERY_EXCHANGE, true, false);
+    }
+
+    /**
+     * Nachrichten gehen als JSON über die Leitung, nicht als serialisiertes
+     * Java-Objekt. Nur so kann später ein Dienst in einer anderen Sprache
+     * mitlesen.
+     *
+     * Der ObjectMapper kommt von Spring Boot und kann bereits Instant im
+     * ISO-8601-Format schreiben.
+     */
+    @Bean
+    public MessageConverter jsonMessageConverter(ObjectMapper objectMapper) {
+        return new Jackson2JsonMessageConverter(objectMapper);
+    }
+}
