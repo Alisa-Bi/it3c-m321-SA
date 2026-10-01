@@ -4,26 +4,31 @@ server:
 spring:
   application:
     name: chat-service
+
   datasource:
     url: jdbc:postgresql://postgres:5432/chat_db
     username: ${DB_USERNAME:chatapp}
     password: ${DB_PASSWORD:change-me}
+
   jpa:
     hibernate:
-      # Fuer das Unterrichts-Grundgerüst ausreichend; vor produktivem Einsatz
+      # Fuer das Unterrichts-Grundgeruest ausreichend; vor produktivem Einsatz
       # durch Flyway/Liquibase ersetzen (siehe ARCHITECTURE.md, Punkt 6).
       ddl-auto: update
     show-sql: false
+
   rabbitmq:
     host: rabbitmq
     port: 5672
     username: ${RABBITMQ_USERNAME:chatapp}
     password: ${RABBITMQ_PASSWORD:change-me}
+
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: http://keycloak:8080/realms/chatapp
+          issuer-uri: http://localhost:8080/realms/chatapp
+          jwk-set-uri: http://keycloak:8080/realms/chatapp/protocol/openid-connect/certs
 
 management:
   endpoints:

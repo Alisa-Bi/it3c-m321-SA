@@ -1,7 +1,17 @@
-# Ausbaustufe 1: nur der Broker und der chat-service.
-# Postgres, Keycloak, web-gateway und batch-writer kommen in den
-# folgenden Schritten dazu.
 services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: chat_db
+      POSTGRES_USER: chatapp
+      POSTGRES_PASSWORD: change-me
+    networks:
+      - chat-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatapp -d chat_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
 
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -16,22 +26,49 @@ services:
       timeout: 5s
       retries: 12
 
-  chat-service:
-    build:
-      context: .
-      dockerfile: chat-service/Dockerfile
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    command: start-dev
     environment:
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: ${RABBITMQ_USER}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
     networks:
       - chat-net
 
-# KEIN ports:-Eintrag in dieser Datei. Der einzige offene Port des
-# Gesamtsystems gehört später dem web-gateway.
+  keycloak-init:
+    image: quay.io/keycloak/keycloak:26.3
+    depends_on:
+      - keycloak
+    volumes:
+      - ./keycloak/init:/init
+    entrypoint: ["/bin/bash", "/init/init-keycloak.sh"]
+    networks:
+      - chat-net
+
+  chat-service:
+    build:
+      context: ./chat-app/backend/chat-service
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      DB_USERNAME: chatapp
+      DB_PASSWORD: change-me
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    networks:
+      - chat-net
+
 networks:
   chat-net:
     name: chat-net
