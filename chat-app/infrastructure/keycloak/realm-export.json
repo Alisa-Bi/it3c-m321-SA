@@ -1,0 +1,23 @@
+{
+  "realm": "chatapp",
+  "enabled": true,
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      { "name": "ROLE_USER" },
+      { "name": "ROLE_MODERATOR" },
+      { "name": "ROLE_ADMIN" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "chatapp-frontend",
+      "publicClient": true,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false
+    }
+  ]
+}

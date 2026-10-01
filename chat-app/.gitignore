@@ -1,0 +1,15 @@
+# Java / Maven
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Umgebungsvariablen (Geheimnisse!) - siehe CLAUDE.md: keine Secrets im Repo
+.env
+docker-compose.override.yml
+
+# Betriebssystem
+.DS_Store

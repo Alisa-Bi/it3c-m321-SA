@@ -1,0 +1,34 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: user-service
+  datasource:
+    url: jdbc:postgresql://postgres:5432/user_db
+    username: ${DB_USERNAME:chatapp}
+    password: ${DB_PASSWORD:change-me}
+  jpa:
+    hibernate:
+      # Fuer das Unterrichts-Grundgerüst ausreichend; vor produktivem Einsatz
+      # durch Flyway/Liquibase ersetzen (siehe ARCHITECTURE.md, Punkt 6).
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: http://keycloak:8080/realms/chatapp
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    ch.m321.chatapp: INFO
