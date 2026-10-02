@@ -1,74 +1,75 @@
+# Docker-Compose-Setup fuer diese Abgabe (batch-writer).
+#
+# Liegt im Repository-Root (PLANUNG.md Abschnitt 5).
+#
+# Enthaelt nur, was Teil dieser Abgabe ist: postgres, rabbitmq,
+# chat-service, batch-writer. keycloak, api-gateway und user-service sind
+# nicht Teil dieser Abgabe und deshalb nicht Teil dieses Stacks (Code
+# bleibt im Repository bestehen, siehe docs/spec-batch-writer.md,
+# Abschnitt 7) - sie sollen die fuer diese Abgabe geprueften Szenarien
+# nicht gefaehrden koennen.
+#
+# Kein Dienst veroeffentlicht einen Port (web-gateway, das den einzigen
+# Port haette, ist ebenfalls nicht Teil dieser Abgabe).
+
 services:
+
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     environment:
-      POSTGRES_DB: chat_db
-      POSTGRES_USER: chatapp
-      POSTGRES_PASSWORD: change-me
+      POSTGRES_USER: ${POSTGRES_USER:-chatapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-chat}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - chat-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U chatapp -d chat_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
+    # Kein "ports:" Eintrag.
 
   rabbitmq:
-    image: rabbitmq:3.13-management
+    image: rabbitmq:3.13-management-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-chatapp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-change-me}
     networks:
       - chat-net
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.3
-    command: start-dev
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-    ports:
-      - "8080:8080"
-    networks:
-      - chat-net
-
-  keycloak-init:
-    image: quay.io/keycloak/keycloak:26.3
-    depends_on:
-      - keycloak
-    volumes:
-      - ./keycloak/init:/init
-    entrypoint: ["/bin/bash", "/init/init-keycloak.sh"]
-    networks:
-      - chat-net
+    # Kein "ports:" Eintrag, auch die Management-UI bleibt intern.
 
   chat-service:
     build:
-      context: ./chat-app/backend/chat-service
-      dockerfile: Dockerfile
-    ports:
-      - "8082:8082"
+      context: .
+      dockerfile: backend/chat-service/Dockerfile
     environment:
-      DB_USERNAME: chatapp
-      DB_PASSWORD: change-me
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USERNAME: ${RABBITMQ_USER}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-chatapp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-change-me}
     depends_on:
-      postgres:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      keycloak:
-        condition: service_started
+      - rabbitmq
     networks:
       - chat-net
+    # Kein "ports:" Eintrag - Zugriff fuer die Szenarien ueber
+    # "docker compose exec" bzw. innerhalb des Netzwerks chat-net.
+
+  batch-writer:
+    build:
+      context: .
+      dockerfile: backend/batch-writer/Dockerfile
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chatapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-chat}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-chatapp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-change-me}
+    depends_on:
+      - postgres
+      - rabbitmq
+    networks:
+      - chat-net
+    # Kein "ports:" Eintrag - batch-writer hat keine REST-Schnittstelle.
 
 networks:
   chat-net:
-    name: chat-net
+    driver: bridge
+
+volumes:
+  postgres-data:

@@ -5,24 +5,37 @@
     <modelVersion>4.0.0</modelVersion>
 
     <!--
-        Dies ist ausschliesslich ein Build-Aggregator, kein gemeinsamer
-        Parent. Die drei Services bleiben vollstaendig eigenstaendig: jeder
-        hat weiterhin seine eigene pom.xml mit spring-boot-starter-parent,
-        keiner von ihnen referenziert dieses POM als <parent>. Dieses POM
-        existiert nur, damit "mvn clean test" im Repository-Root alle
-        Module in einem Durchlauf baut.
+        Echtes Maven-Elternprojekt (PLANUNG.md Abschnitt 5: "pom.xml #
+        Maven-Elternprojekt"), nicht nur ein Aggregator. chat-service und
+        batch-writer erben von hier ihr Dependency-Management (transitiv
+        ueber spring-boot-starter-parent). api-gateway und user-service
+        sind absichtlich NICHT Teil dieses Builds - sie gehoeren nicht zum
+        Umfang dieser Abgabe und sollen den Build von Szenario S1 nicht
+        gefaehrden koennen, ohne etwas beizutragen (siehe
+        docs/spec-batch-writer.md, Abschnitt 7). Ihr Code bleibt im Repo
+        bestehen, nur ausserhalb dieses Reactor-Builds.
     -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.3.5</version>
+        <relativePath/>
+    </parent>
+
     <groupId>ch.m321.chatapp</groupId>
-    <artifactId>chat-app-build</artifactId>
+    <artifactId>chat-app-parent</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
-    <name>chat-app-build</name>
-    <description>Reiner Build-Aggregator fuer die M321 Chat-App, kein Parent-POM.</description>
+    <name>chat-app-parent</name>
+    <description>Maven-Elternprojekt der M321 Chat-App (Abgabe batch-writer).</description>
+
+    <properties>
+        <java.version>21</java.version>
+    </properties>
 
     <modules>
-        <module>chat-app/backend/api-gateway</module>
-        <module>chat-app/backend/user-service</module>
-        <module>chat-app/backend/chat-service</module>
+        <module>backend/chat-service</module>
+        <module>backend/batch-writer</module>
     </modules>
 
 </project>

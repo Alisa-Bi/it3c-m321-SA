@@ -1,5 +1,6 @@
 # Build
 target/
+*.class
 build/
 out/
 node_modules/
@@ -15,6 +16,12 @@ dist/
 
 # Lokale Geheimnisse
 .env
+docker-compose.override.yml
 
-# Playwright-Prüfartefakte
+# Playwright-Pruefartefakte
 .playwright-mcp/
+
+# Lokale Testskripte und Testdaten (siehe chore-Commit)
+load-test*.sh
+payload.json
+publish.json
