@@ -1,20 +1,17 @@
 package ch.m321.chatapp.chat.dto;
 
+import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Was ein Client schickt, um eine neue Nachricht zu versenden.
+ * Vertrag einer Chatnachricht - zugleich REST-Eingabe (als Teilmenge) und
+ * vollstaendige Nutzlast auf der Queue chat.persist.
  *
- * messageId wird vom REST-Client NICHT gesetzt - chat-service erzeugt sie
- * selbst beim Publizieren (siehe MessageService.publishNewMessage()), damit
- * der spaetere batch-writer jede Nachricht eindeutig als "schon verarbeitet"
- * erkennen kann (Idempotenz, siehe docs/spec-batch-writer.md, Abschnitt 2).
- * Enthaelt bewusst noch keine id/createdAt/status - diese werden erst beim
- * tatsaechlichen Speichern vergeben (siehe MessageService.createMessage).
- * Dieses Objekt ist zugleich die REST-Anfrage (POST /api/messages) und die
- * Nutzlast, die anschliessend ueber RabbitMQ transportiert wird - fuer ein
- * einzelnes Objekt mit zwei Verwendungszwecken braucht es keine zwei
- * fast identischen Klassen.
+ * id und sentAt setzt der Client NICHT - chat-service vergibt beide beim
+ * Publizieren (siehe PLANUNG.md 3.4: "UUID vergeben, Server-Zeitstempel
+ * setzen"), bevor die Nachricht an RabbitMQ geht. id ist zugleich der
+ * Idempotenz-Schluessel fuer batch-writer (siehe docs/spec-batch-writer.md,
+ * Abschnitt 2 und 5.2) - es gibt bewusst kein zweites, separates Feld dafuer.
  */
-public record NewMessageRequest(UUID messageId, UUID roomId, UUID senderId, String content) {
+public record NewMessageRequest(UUID id, UUID roomId, String senderId, String senderName, String content, Instant sentAt) {
 }

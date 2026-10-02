@@ -1,12 +1,7 @@
 package ch.m321.chatapp.chat.service;
 
-import ch.m321.chatapp.chat.dto.MessageDto;
 import ch.m321.chatapp.chat.dto.NewMessageRequest;
-import ch.m321.chatapp.chat.entity.Message;
-import ch.m321.chatapp.chat.entity.MessageStatus;
-import ch.m321.chatapp.chat.mapper.MessageMapper;
 import ch.m321.chatapp.chat.messaging.MessageProducer;
-import ch.m321.chatapp.chat.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -14,78 +9,41 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 /**
- * Fachlogik rund um Chatnachrichten.
+ * Fachlogik rund um das Entgegennehmen neuer Chatnachrichten.
  *
- * Lesen (Historie) passiert synchron direkt aus der Datenbank. Schreiben
- * passiert bewusst asynchron, entsprechend dem Nachrichtenfluss aus der
- * Planung (Chat Service -> RabbitMQ -> Message Consumer -> Speicherung):
- * publishNewMessage() prueft nur die Eingabe und gibt sie an RabbitMQ
- * weiter; createMessage() speichert tatsaechlich in PostgreSQL und wird
- * ausschliesslich vom MessageConsumer aufgerufen, nachdem die Nachricht
- * aus der Queue gelesen wurde.
+ * chat-service speichert nichts selbst (siehe docs/spec-batch-writer.md,
+ * Abschnitt 1) - diese Klasse validiert nur, vergibt id und sentAt
+ * (PLANUNG.md 3.4) und gibt die fertige Nachricht an RabbitMQ weiter.
+ * batch-writer ist der einzige Datenbank-Schreiber.
  */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class MessageService {
 
-    private final MessageRepository messageRepository;
-    private final MessageMapper messageMapper;
     private final MessageProducer messageProducer;
 
-    public List<MessageDto> getMessageHistory(UUID roomId) {
-        List<Message> messages = messageRepository.findByRoomIdOrderByCreatedAtAsc(roomId);
-        List<MessageDto> result = new ArrayList<>();
-        for (Message message : messages) {
-            result.add(messageMapper.toDto(message));
-        }
-        return result;
-    }
-
-    // Wird vom Controller aufgerufen. Prueft nur die Eingabe und uebergibt
-    // sie an RabbitMQ - die eigentliche Speicherung passiert entkoppelt im
-    // MessageConsumer, damit der Chat-Service unter Last reaktionsfaehig
-    // bleibt und der Sender nicht auf den Datenbank-Schreibvorgang warten muss.
+    // Validiert die Eingabe, vergibt id und sentAt und veroeffentlicht die
+    // fertige Nachricht. Wird vom Controller fuer jede eingehende Anfrage aufgerufen.
     public void publishNewMessage(NewMessageRequest request) {
-        if (request.roomId() == null || request.senderId() == null) {
+        if (request.roomId() == null || request.senderId() == null || request.senderId().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "roomId und senderId sind erforderlich");
         }
         if (request.content() == null || request.content().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nachricht darf nicht leer sein");
         }
-        NewMessageRequest requestWithId = ensureMessageId(request);
-        messageProducer.publish(requestWithId);
-    }
 
-    // Erzeugt bei Bedarf eine neue messageId. Der REST-Client liefert normalerweise
-    // keine mit - chat-service ist dafuer verantwortlich, jede Nachricht eindeutig
-    // zu kennzeichnen, bevor sie an RabbitMQ geht (siehe docs/spec-batch-writer.md).
-    private NewMessageRequest ensureMessageId(NewMessageRequest request) {
-        if (request.messageId() != null) {
-            return request;
-        }
-        return new NewMessageRequest(UUID.randomUUID(), request.roomId(), request.senderId(), request.content());
-    }
+        NewMessageRequest readyToSend = new NewMessageRequest(
+                UUID.randomUUID(),
+                request.roomId(),
+                request.senderId(),
+                request.senderName(),
+                request.content(),
+                Instant.now());
 
-    // Speichert eine neue Nachricht mit Status SENT. Wird ausschliesslich
-    // vom MessageConsumer aufgerufen, nachdem eine Nachricht aus RabbitMQ
-    // gelesen wurde. Zustellung/Lesen (DELIVERED/READ) folgen in einem
-    // spaeteren Schritt.
-    public MessageDto createMessage(NewMessageRequest request) {
-        Message newMessage = new Message();
-        newMessage.setMessageId(request.messageId());
-        newMessage.setRoomId(request.roomId());
-        newMessage.setSenderId(request.senderId());
-        newMessage.setContent(request.content());
-        newMessage.setCreatedAt(Instant.now());
-        newMessage.setStatus(MessageStatus.SENT);
-        Message savedMessage = messageRepository.save(newMessage);
-        log.info("Neue Nachricht gespeichert: {}", savedMessage.getId());
-        return messageMapper.toDto(savedMessage);
+        messageProducer.publish(readyToSend);
     }
 }
