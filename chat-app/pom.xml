@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        Dies ist ausschliesslich ein Build-Aggregator, kein gemeinsamer
+        Parent. Die drei Services bleiben vollstaendig eigenstaendig: jeder
+        hat weiterhin seine eigene pom.xml mit spring-boot-starter-parent,
+        keiner von ihnen referenziert dieses POM als <parent>. Dieses POM
+        existiert nur, damit "mvn clean test" im Repository-Root alle
+        Module in einem Durchlauf baut (siehe docs/plan-batch-writer.md,
+        Schritt 1, und ARCHITECTURE.md, Punkt 4 und 8).
+    -->
+    <groupId>ch.m321.chatapp</groupId>
+    <artifactId>chat-app-build</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>chat-app-build</name>
+    <description>Reiner Build-Aggregator fuer die M321 Chat-App, kein Parent-POM.</description>
+
+    <modules>
+        <module>backend/api-gateway</module>
+        <module>backend/user-service</module>
+        <module>backend/chat-service</module>
+    </modules>
+
+</project>

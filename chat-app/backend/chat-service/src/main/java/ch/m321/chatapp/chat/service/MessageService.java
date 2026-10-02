@@ -58,7 +58,18 @@ public class MessageService {
         if (request.content() == null || request.content().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Nachricht darf nicht leer sein");
         }
-        messageProducer.publish(request);
+        NewMessageRequest requestWithId = ensureMessageId(request);
+        messageProducer.publish(requestWithId);
+    }
+
+    // Erzeugt bei Bedarf eine neue messageId. Der REST-Client liefert normalerweise
+    // keine mit - chat-service ist dafuer verantwortlich, jede Nachricht eindeutig
+    // zu kennzeichnen, bevor sie an RabbitMQ geht (siehe docs/spec-batch-writer.md).
+    private NewMessageRequest ensureMessageId(NewMessageRequest request) {
+        if (request.messageId() != null) {
+            return request;
+        }
+        return new NewMessageRequest(UUID.randomUUID(), request.roomId(), request.senderId(), request.content());
     }
 
     // Speichert eine neue Nachricht mit Status SENT. Wird ausschliesslich
@@ -67,6 +78,7 @@ public class MessageService {
     // spaeteren Schritt.
     public MessageDto createMessage(NewMessageRequest request) {
         Message newMessage = new Message();
+        newMessage.setMessageId(request.messageId());
         newMessage.setRoomId(request.roomId());
         newMessage.setSenderId(request.senderId());
         newMessage.setContent(request.content());
