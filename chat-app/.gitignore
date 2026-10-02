@@ -13,3 +13,7 @@ docker-compose.override.yml
 
 # Betriebssystem
 .DS_Store
+
+docker/load-test*.sh
+docker/payload.json
+docker/publish.json
