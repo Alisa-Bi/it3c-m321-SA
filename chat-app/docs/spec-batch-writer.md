@@ -1,377 +1,332 @@
 # Spezifikation: batch-writer
 
-Dieses Dokument beschreibt den Dienst `batch-writer` vollständig genug, um
-darauf `docs/plan-batch-writer.md` (den Umsetzungsplan) aufzubauen. Es
-enthält keinen Code und keinen Umsetzungsplan - nur das fachliche und
-technische Verhalten, das der Dienst zeigen muss.
+Massstab für dieses Dokument: Eine Mitschülerin könnte `batch-writer` allein
+daraus bauen, ohne nachzufragen. Jede Aussage hier ist entweder direkt aus
+`PLANUNG.md` belegt (mit Abschnittsangabe) oder als eigene, begründete
+Entscheidung gekennzeichnet.
 
-## 0. Grundlage und Rahmenentscheidungen
-
-Folgende Entscheidungen sind bereits getroffen und bilden die Grundlage
-dieser Spezifikation:
-
-| # | Entscheidung | Herkunft |
-|---|---|---|
-| 1 | PostgreSQL bleibt die zentrale Datenbank | vorgegeben |
-| 2 | RabbitMQ wird verwendet | vorgegeben |
-| 3 | Queue `chat.persist`, DLQ `chat.dlq` | vorgegeben |
-| 4 | API Gateway bleibt Bestandteil der Architektur | vorgegeben |
-| 5 | Docker Compose bleibt bestehen | vorgegeben |
-| 6 | `batch-writer` wird als eigener Microservice implementiert | vorgegeben |
-| 7 | Jeder Service (inkl. `batch-writer`) hat eine eigene, eigenständige `pom.xml` | vorgegeben |
-| 8 | Datenhoheit: `chat-service` bleibt fachlicher Owner der Nachrichtendaten, `batch-writer` ist reiner Persistenz-Ausführer | aus Entscheidungsgrundlage übernommen |
-| 9 | Zieldatenbank: geteilte `chat_db`, bestehende Tabelle `messages` | aus Entscheidungsgrundlage übernommen |
-| 10 | `MessageConsumer` im chat-service wird entfernt; chat-service produziert nur noch | aus Entscheidungsgrundlage übernommen |
-| 11 | Nachrichtenformat wird um `messageId` (UUID) erweitert | aus Entscheidungsgrundlage übernommen |
-| 12 | Idempotenz-Schlüssel ist `messageId`, durchgesetzt per UNIQUE-Constraint in der DB | aus Entscheidungsgrundlage übernommen |
-| 13 | RabbitMQ-Topologie: `chat.persist` am bestehenden `chat.exchange`, eigener Dead-Letter-Exchange `chat.dlx` gebunden an `chat.dlq` | aus Entscheidungsgrundlage übernommen |
-| 14 | Retry vs. DLQ wird nach Fehlertyp unterschieden (Infrastruktur → Retry, Format/Validierung → DLQ) | aus Entscheidungsgrundlage übernommen |
-| 15 | Root-Build: schlanker Aggregator-POM im Repo-Root für `mvn clean test`, kein gemeinsamer Parent | aus Entscheidungsgrundlage übernommen |
-| 16 | Batching: kombiniert größen- und zeitbasiert | aus Entscheidungsgrundlage übernommen |
-
-**Verbleibende Annahme, nicht final bestätigt**: S3/S4/S6 sprechen von
-`POST /messages`, S5 explizit von einem direkten Eingriff in `chat.persist`.
-Diese Spezifikation geht davon aus, dass S3/S4/S6 den regulären,
-authentifizierten Weg über API Gateway → chat-service meinen (sonst hätte
-S5 die Abweichung nicht eigens betont). `batch-writer` selbst ist von dieser
-Frage nicht betroffen, da er nie über REST angesprochen wird - er
-konsumiert ausschließlich aus `chat.persist`. Diese Annahme wird hier nur
-der Vollständigkeit halber festgehalten.
+Diese Fassung ersetzt eine frühere Version, die gegen ein anderes,
+inzwischen verworfenes Planungsdokument geschrieben war. Die wichtigsten
+Korrekturen gegenüber der alten Fassung: nur **ein** `id`-Feld statt zweier
+UUIDs, `JdbcTemplate` statt JPA, keine Authentifizierung auf chat-service,
+Batch-Parameter aus PLANUNG.md statt selbst gewählt, `chat.persist` als
+direkte Queue statt eigener Exchange.
 
 ---
 
 ## 1. Zweck und Abgrenzung
 
-**Zweck**: `batch-writer` konsumiert Nachrichten aus der Queue
-`chat.persist` und speichert sie gebündelt (in Batches) dauerhaft in der
-Tabelle `messages` der Datenbank `chat_db`. Er entkoppelt die
-Schreib-Last auf PostgreSQL von der Annahme-Geschwindigkeit des
-chat-service und reduziert die Anzahl Datenbank-Transaktionen durch
-Batching.
+**Zweck**: `batch-writer` ist laut PLANUNG.md 3.1 der **einzige
+Datenbank-Schreiber** im System. Er konsumiert Nachrichten aus der Queue
+`chat.persist` und schreibt sie gebündelt per Bulk-Insert in die Tabelle
+`message`. Grund laut PLANUNG.md 1 und 4.1: Das System soll 100'000+
+Nachrichten/Minute zeigen können; Einzel-Inserts wären dafür ungeeignet,
+Batches mit `ON CONFLICT DO NOTHING` sind die gewählte Lösung (PLANUNG.md
+3.6, 4.1).
 
-**Abgrenzung - was `batch-writer` NICHT tut**:
+**Ausdrücklich nicht Teil dieser Abgabe** (laut Aufgabenstellung, nicht
+laut PLANUNG.md - PLANUNG.md beschreibt die Zielarchitektur, die
+Aufgabenstellung grenzt den aktuellen Zwischenstand ein):
 
-- Kein öffentlicher REST-Endpunkt, kein nach außen veröffentlichter Port.
-- Keine Keycloak-/JWT-Anbindung (kein eingehender HTTP-Traffic, der
-  geschützt werden müsste).
-- Kein WebSocket-Broadcast an Chat-Teilnehmer (bleibt, falls künftig
-  gewünscht, Aufgabe von chat-service).
-- Keine fachliche Validierung über Formatprüfung hinaus - z. B. keine
-  Prüfung, ob `senderId` tatsächlich Mitglied des Chatraums ist. Das bleibt
-  Aufgabe von chat-service, bevor eine Nachricht überhaupt publiziert wird.
-- Kein Lesezugriff/keine API für andere Dienste. `GET /api/messages/{roomId}`
-  bleibt ausschließlich bei chat-service.
-- Keine eigene Datenbank - schreibt in die von chat-service betriebene
-  `chat_db` (siehe Abschnitt 4, Schemaverwaltung).
-- Keine automatische Wiederverarbeitung oder Bereinigung der DLQ.
+- Chat-Historie lesen (GET-Pfad bleibt unverändert liegen, wird nicht
+  geprüft)
+- Räume und Mitgliedschaften (`ROOM`, `ROOM_MEMBER` aus PLANUNG.md 3.7)
+- Keycloak, `web-gateway`, `load-generator`
+
+Diese Teile werden **nicht entfernt**, nur nicht weiter ausgebaut oder
+geprüft. Code, der dazu existiert, bleibt liegen.
+
+**Build- und Stack-Umfang dieser Abgabe**: Da S1 den kompletten
+`mvn clean test`-Lauf im Wurzelverzeichnis prüft und S2 den kompletten
+`docker compose up -d --build`-Lauf, zählt für beide Szenarien alles, was
+im Root-POM bzw. in `docker-compose.yml` aufgeführt ist - unabhängig
+davon, ob der jeweilige Dienst selbst bewertet wird. `api-gateway` und
+`user-service` bleiben deshalb als Code im Repository liegen, werden aber
+aus dem Root-`<modules>`-Eintrag und aus `docker-compose.yml`
+herausgenommen: Sie bringen in dieser Abgabe keine Punkte, könnten aber
+als Risiko in genau die beiden Szenarien hineinwirken, die den gesamten
+Build bzw. Stack prüfen. `keycloak` entfällt aus `docker-compose.yml` aus
+demselben Grund und weil `chat-service` ohnehin ohne Authentifizierung
+läuft (siehe unten).
+
+**Direkte Konsequenz aus "Keycloak nicht Teil dieser Aufgabe" plus
+PLANUNG.md 3.1**: Laut PLANUNG.md wird das Token *ausschliesslich* am
+Gateway geprüft - *"Die inneren Dienste vertrauen dem internen Netz"*. Da
+das Gateway in dieser Abgabe nicht existiert, ist `chat-service` für
+diesen Zwischenstand ohne Authentifizierung erreichbar. Das ist keine
+Abweichung von PLANUNG.md, sondern genau die dort beschriebene Architektur
+- nur ohne den (hier nicht geforderten) äusseren Wachposten davor. Die
+bestehende `SecurityConfig`/`oauth2-resource-server`-Einrichtung in
+chat-service wird entfernt bzw. deaktiviert.
+
+**Was `batch-writer` nicht tut**:
+- Kein REST-Endpunkt, kein veröffentlichter Port (PLANUNG.md 3.1: "genau
+  ein Port-Mapping im ganzen docker-compose.yml", und das ist web-gateway,
+  nicht batch-writer).
+- Kein Lesezugriff auf `message` - das bleibt, falls überhaupt, bei
+  chat-service.
+- Kein Zustellpfad (`chat.delivery`) - das ist Aufgabe des (hier nicht
+  gebauten) `web-gateway` (PLANUNG.md 3.4).
+- Kein JPA/Hibernate - bewusst `JdbcTemplate` (PLANUNG.md 2.1: *"Bewusst
+  kein JPA im Batch-Writer: batchUpdate ist genau das, was wir zeigen
+  wollen"*).
 
 ---
 
-## 2. Nachrichtenvertrag
+## 2. Vertrag: was auf `chat.persist` ankommt
 
-**Transport**: JSON über AMQP. Header `content_type: application/json` wird
-gesetzt (das ist laut Vorgabe für S5 die einzige verlässlich gesetzte
-Eigenschaft bei direktem Queue-Zugriff).
+**Woher das feststeht**: PLANUNG.md 3.4 (Sequenzdiagramm) und 3.7
+(Datenmodell).
 
-**Felder**:
+Laut 3.4 vergibt **chat-service**, nicht batch-writer, sowohl die
+Nachrichten-ID als auch den Zeitstempel, bevor publiziert wird: *"UUID
+vergeben, Server-Zeitstempel setzen, Empfänger ermitteln"* - danach erst
+`publish -> chat.persist`. `batch-writer` erzeugt beim Schreiben also
+nichts mehr selbst, er übernimmt die Werte unverändert aus der Nachricht.
 
-| Feld | Typ | Pflicht | Bedeutung |
+Felder, abgeleitet aus dem ER-Diagramm in 3.7 (`MESSAGE`-Entität), als
+JSON (Jackson-Standard: camelCase):
+
+| JSON-Feld | Typ | Herkunft laut PLANUNG.md | Pflicht |
 |---|---|---|---|
-| `messageId` | UUID (String) | ja | Fachlicher Idempotenz-Schlüssel. Wird von chat-service beim Publizieren erzeugt, bevor die Nachricht an RabbitMQ geht. Identisch bei jedem Zustellversuch derselben Sendeabsicht. |
-| `roomId` | UUID (String) | ja | Ziel-Chatraum. |
-| `senderId` | UUID (String) | ja | Absender. |
-| `content` | String | ja, nicht leer | Nachrichtentext. |
+| `id` | UUID (String) | "vom chat-service vergeben" (3.7), zugleich Primärschlüssel und Idempotenz-Schlüssel (3.6) | ja |
+| `roomId` | UUID (String) | Fremdschlüssel auf `ROOM` (3.7) | ja |
+| `senderId` | String | "sub aus Keycloak" (3.7) - hier als String, da Keycloak in diesem Zwischenstand nicht läuft und kein echtes JWT existiert, aus dem ein `sub` stammen könnte | ja |
+| `senderName` | String | "denormalisiert" (3.7) - bewusst mitgespeichert, damit die Historie lesbar bleibt, auch wenn ein Konto später gelöscht wird | ja |
+| `content` | String | Nachrichtentext (3.7) | ja, nicht leer |
+| `sentAt` | ISO-8601-Zeitstempel | "Server-Zeitstempel setzen" (3.4) - von chat-service gesetzt, nicht von batch-writer | ja |
 
-Dieses Feldset ist eine Erweiterung des bereits bestehenden
-`NewMessageRequest` um `messageId`. chat-service muss vor Inbetriebnahme
-von `batch-writer` entsprechend angepasst werden (Folgearbeit, nicht Teil
-dieser Spezifikation, siehe `docs/plan-batch-writer.md`).
+**Transport**: JSON über AMQP, `content-type: application/json` (so im
+Testszenario S5 vorausgesetzt).
 
-**Warum `messageId` im JSON-Body liegt, nicht als AMQP-Property**: S5
-garantiert beim direkten Einlegen in `chat.persist` ausschließlich den
-Header `content_type`. Ein selbst gesetzter `message-id`-Header ist in
-diesem Testpfad nicht verlässlich vorhanden. Ein Feld im Nachrichtenkörper
-ist deshalb die robustere Wahl.
+**Kein separates `messageId`-Feld**: anders als in der verworfenen
+Vorfassung dieser Spezifikation gibt es nur **ein** `id`-Feld. PLANUNG.md
+3.6 ist hier eindeutig: *"die Spalte message.id ist Primärschlüssel,
+ON CONFLICT DO NOTHING verwirft das Duplikat beim Einfügen"* - es gibt in
+der Zielarchitektur keine zweite, separate Idempotenz-Spalte.
 
 **Verhalten bei Vertragsverletzung** (kein valides JSON, fehlendes
-Pflichtfeld, leerer `content`, ungültiges UUID-Format): Die Nachricht gilt
-als dauerhaft nicht verarbeitbar und wird ohne Retry-Versuch direkt an
-`chat.dlq` weitergereicht (siehe Abschnitt 7).
+Pflichtfeld, leerer `content`): zählt als fehlgeschlagener
+Verarbeitungsversuch, siehe Abschnitt 5.3 - nach PLANUNG.md 3.5 gibt es
+keine Sonderbehandlung für "kaputte" gegenüber "technisch nicht
+verarbeitbaren" Nachrichten, beide zählen gleich.
 
 ---
 
-## 3. RabbitMQ-Queues
+## 3. RabbitMQ-Topologie
 
-**Exchange**: weiterhin `chat.exchange` (bestehender `TopicExchange`).
+**Woher das feststeht**: PLANUNG.md 3.5 (Tabelle).
 
-**Routing-Key**: `chat.persist` (neu, ersetzt den bisherigen
-`chat.message`-Routing-Key für den Persistenzpfad).
-
-**Queue `chat.persist`**:
-- durable: `true`
-- Consumer-Acknowledgment: manuell (kein Auto-Ack)
-- Queue-Argument `x-dead-letter-exchange`: `chat.dlx`
-- Kein nachrichtenweites TTL (Retry erfolgt über Requeue mit Backoff, nicht
-  über TTL-Ablauf, siehe Abschnitt 6)
-
-**Dead-Letter-Exchange `chat.dlx`** (neu):
-- Typ: Fanout (keine weitere Verzweigung nötig, einzige Aufgabe ist die
-  Weiterleitung an `chat.dlq`)
-- Gebunden an genau eine Queue: `chat.dlq`
-
-**Queue `chat.dlq`**:
-- durable: `true`
-- Keine automatische Weiterverarbeitung. Nachrichten bleiben bis zur
-  manuellen Prüfung liegen (siehe Abgrenzung, Abschnitt 1).
-
-**Deklarationsverantwortung**: `batch-writer` deklariert alle vier Objekte
-(`chat.exchange`-Referenz, `chat.persist`, `chat.dlx`, `chat.dlq`) beim
-Start als eigene Konfiguration. chat-service deklariert weiterhin
-`chat.exchange` für den Produce-Vorgang, aber keine eigene
-Nachrichten-Queue mehr (der bisherige `MessageConsumer` entfällt,
-Entscheidung 10 in Abschnitt 0). RabbitMQ-Deklarationen sind idempotent;
-eine doppelte, inhaltlich identische Deklaration durch zwei Dienste ist
-unkritisch.
-
-**Konsumentenkonfiguration**: Prefetch-Count = Batch-Grösse (siehe
-Abschnitt 10), damit pro Instanz höchstens ein Batch gleichzeitig "in
-Arbeit" ist.
-
----
-
-## 4. Datenmodell
-
-**Zieltabelle**: `chat_db.messages` (bestehende Tabelle aus chat-service,
-wird weiterverwendet, nicht neu angelegt).
-
-**Schemaänderung**: neue Spalte `message_id` (UUID), `NOT NULL`, `UNIQUE`.
-
-Bestehende Spalten (`id`, `room_id`, `sender_id`, `content`, `created_at`,
-`status`) bleiben unverändert. `id` bleibt der technische, intern von der
-Datenbank vergebene Primärschlüssel; `message_id` ist der fachliche,
-von außen (chat-service) vorgegebene Idempotenz-Schlüssel. Beides sind
-UUIDs, aber unterschiedliche Konzepte - diese Unterscheidung muss in der
-Implementierung klar benannt werden.
-
-**Neue Indizes**:
-- `UNIQUE INDEX` auf `message_id` (erzwingt die Idempotenz aus Abschnitt 5
-  auf Datenbankebene, nicht nur in der Anwendungslogik).
-- Index auf (`room_id`, `created_at`) für den Lesepfad von
-  `GET /api/messages/{roomId}` - fehlt aktuell bereits unabhängig von
-  `batch-writer`, wird hier nachgezogen, da ohnehin eine Schemaänderung
-  ansteht.
-
-**Schemaverwaltung - wichtige Klärung**: Zwei Dienste dürfen nicht
-gleichzeitig per `ddl-auto: update` gegeneinander um dasselbe Schema
-konkurrieren. Da chat-service laut Entscheidung 8 (Abschnitt 0) der
-fachliche Owner bleibt, verwaltet **ausschließlich chat-service** das
-Schema der Tabelle `messages` (inklusive der neuen Spalte `message_id` und
-der neuen Indizes). `batch-writer` verbindet sich mit `ddl-auto: validate`
-(oder `none`) gegen dasselbe Schema - er liest/schreibt Daten, verändert
-aber nie die Tabellenstruktur. Diese Reihenfolge ist für
-`docs/plan-batch-writer.md` relevant: das Schema muss vor dem ersten Start
-von `batch-writer` bereits existieren.
-
----
-
-## 5. Duplikatbehandlung
-
-**Mechanismus**: Einfügen mit Konfliktbehandlung auf `message_id`
-(äquivalent zu `INSERT ... ON CONFLICT (message_id) DO NOTHING`), nicht
-"erst prüfen, dann einfügen" - letzteres ist unter Nebenläufigkeit (siehe
-Abschnitt 9) eine Race Condition und keine verlässliche Garantie.
-
-**Verhalten bei erkanntem Duplikat**: Die Nachricht wird als "bereits
-vorhanden" behandelt, ganz normal bestätigt (Ack), **nicht** als Fehler
-gewertet und **nicht** in `chat.dlq` verschoben. Ein Protokolleintrag auf
-Info-Level ist zulässig, aber kein Error-Level - ein Duplikat ist laut
-Aufgabenstellung (S5) ein erwarteter, zu behandelnder Normalfall, kein
-Fehlerfall.
-
-**Abgrenzung**: Ein Duplikat (gleiche `message_id`) ist strikt zu
-unterscheiden von zwei inhaltlich gleichlautenden, aber eigenständigen
-Nachrichten (unterschiedliche `message_id`) - letztere werden beide
-gespeichert.
-
----
-
-## 6. Retry-Verhalten
-
-**Grundprinzip**: Unterscheidung nach Fehlerursache.
-
-- **Infrastrukturfehler** (z. B. Datenbank nicht erreichbar,
-  Verbindungs-Timeout beim Commit eines Batches): Die betroffenen
-  Nachrichten werden **nicht** bestätigt und mit Requeue zurück an
-  `chat.persist` gegeben. Sie werden später erneut zugestellt.
-- **Format-/Validierungsfehler** (siehe Abschnitt 2): sofortiger Reject
-  **ohne** Requeue - das löst über das Dead-Letter-Exchange-Argument der
-  Queue die automatische Weiterleitung an `chat.dlq` aus (kein
-  Infrastrukturfehler, kein Grund für einen erneuten Versuch).
-
-**Backoff bei Infrastrukturfehlern**: Ohne Verzögerung würde eine
-dauerhaft nicht erreichbare Datenbank zu einer Dauerschleife aus
-Zustellung-Fehlschlag-Requeue führen ("busy loop"). Deshalb gilt ein
-exponentiell steigender Backoff zwischen Wiederholungsversuchen, gedeckelt
-bei einer Obergrenze (konkrete Werte siehe Abschnitt 10,
-Konfiguration). Der genaue technische Mechanismus (z. B. verzögertes
-Requeue über eine Retry-Queue mit TTL vs. In-Memory-Wartezeit vor dem
-Reject) ist eine Umsetzungsentscheidung und gehört in
-`docs/plan-batch-writer.md`.
-
-**Sicherheitsnetz-Obergrenze**: Ein Retry-Zähler wird pro Nachricht
-mitgeführt. Ab einer konfigurierbaren Obergrenze (Abschnitt 10) wird die
-Nachricht ebenfalls nach `chat.dlq` verschoben, selbst wenn der
-ursprüngliche Fehler ein Infrastrukturfehler war - das verhindert, dass
-eine dauerhaft gestörte Datenbank `chat.persist` unbegrenzt blockiert. Die
-konkrete Obergrenze ist so zu wählen, dass ein kurzer, vorübergehender
-Ausfall (siehe S7, 15 Sekunden) sie nicht erreicht.
-
----
-
-## 7. DLQ-Verhalten
-
-**Auslöser**:
-1. Format-/Validierungsfehler (Abschnitt 2).
-2. Überschreiten der Retry-Obergrenze bei anhaltenden Infrastrukturfehlern
-   (Abschnitt 6).
-
-**Kein Auslöser**: Duplikate (Abschnitt 5) - das ist die wichtigste
-Abgrenzung, da S5 explizit verlangt, dass im Duplikatfall nichts in
-`chat.dlq` landet.
-
-**Mechanismus**: Technisch über Reject ohne Requeue in Kombination mit dem
-`x-dead-letter-exchange`-Argument der Queue `chat.persist` - RabbitMQ
-übernimmt das Routing an `chat.dlx` → `chat.dlq` automatisch, kein
-manuelles Publizieren durch `batch-writer` nötig.
-
-**Nach dem Verschieben**: Keine automatische Wiederverarbeitung, kein
-automatisches Löschen. Nachrichten bleiben in `chat.dlq`, bis sie manuell
-geprüft werden (Abgrenzung, Abschnitt 1). Beim Verschieben wird ein
-Protokolleintrag auf Error-Level mit Grund (Format-Fehler vs.
-Retry-Obergrenze erreicht) erzeugt.
-
----
-
-## 8. Verhalten bei Datenbankausfall
-
-**Erkennung**: Eine JDBC-/JPA-Ausnahme beim Versuch, einen Batch zu
-committen (z. B. Verbindung abgelehnt, Timeout).
-
-**Reaktion**: Der betroffene Batch wird nicht bestätigt; alle enthaltenen
-Nachrichten werden gemäß Abschnitt 6 (Infrastrukturfehler) mit Requeue und
-Backoff behandelt.
-
-**Prozessüberleben**: Der `batch-writer`-Prozess selbst darf durch einen
-Datenbankausfall **nicht** abstürzen oder sich beenden. Ein nicht
-erreichbarer Datenbank-Server ist ein erwarteter, zu behandelnder
-Zwischenzustand, kein fataler Fehler. Das deckt sich mit der Vorgabe aus
-S7, dass kein manueller Neustart nötig sein darf.
-
-**Zeitbudget (bezogen auf S7)**: Nach einem 15-Sekunden-Ausfall müssen 300
-Nachrichten binnen höchstens 90 Sekunden gespeichert sein. Die
-Backoff-Parameter (Abschnitt 10) sind so gewählt, dass die Summe der
-Wartezeiten während eines 15-Sekunden-Ausfalls deutlich unter der
-Sicherheitsnetz-Obergrenze aus Abschnitt 6 bleibt - ein kurzer Ausfall darf
-keine Nachricht fälschlich in Richtung DLQ drängen.
-
-**Kein Datenverlust**: Da `chat.persist` durable ist und eine Nachricht
-erst nach erfolgreichem Commit bestätigt wird, bleiben alle betroffenen
-Nachrichten während des gesamten Ausfalls sicher in der Queue.
-
----
-
-## 9. Verhalten bei mehreren batch-writer Instanzen
-
-**Grundprinzip**: RabbitMQ verteilt die Nachrichten einer Queue
-automatisch auf mehrere verbundene Consumer (Competing-Consumers-Muster).
-Dafür ist in `batch-writer` selbst keine zusätzliche Verteil-Logik nötig.
-
-**Was zusätzlich sichergestellt werden muss**: Die Eindeutigkeits-Garantie
-aus Abschnitt 5 muss auch unter echter Nebenläufigkeit halten. Zwei
-Instanzen, die "gleichzeitig" prüfen würden, ob eine `message_id` schon
-existiert, könnten beide "nein" sehen und doppelt einfügen - eine
-klassische Race Condition. Deshalb ist die Durchsetzung über den
-UNIQUE-Constraint auf Datenbankebene (Abschnitt 4) zwingend, nicht nur
-eine Anwendungsprüfung.
-
-**Prefetch**: Jede Instanz begrenzt ihre gleichzeitig unbestätigten
-Nachrichten auf die konfigurierte Batch-Grösse (Abschnitt 10), damit keine
-Instanz der anderen dauerhaft alle Nachrichten wegnimmt. Für die reine
-Abnahme (S6: "alle da, keine doppelt") ist das nicht zwingend nötig, für
-eine sinnvolle Lastverteilung im Betrieb aber Teil dieser Spezifikation.
-
-**Skalierungsgrenze**: Diese Spezifikation legt keine Obergrenze für die
-Anzahl gleichzeitiger Instanzen fest - das beschriebene Muster ist
-grundsätzlich horizontal skalierbar.
-
----
-
-## 10. Konfiguration
-
-| Schlüssel (konzeptionell) | Bedeutung | Empfohlener Default | Bezug |
+| Name | Typ laut PLANUNG.md 3.5 | Erzeuger | Verbraucher |
 |---|---|---|---|
-| Datenbank-URL | Verbindung zu `chat_db` (geteilt mit chat-service) | `jdbc:postgresql://postgres:5432/chat_db` | Abschnitt 4 |
-| Datenbank-Zugangsdaten | wie bei den bestehenden Services | aus `DB_USERNAME`/`DB_PASSWORD` | bestehend |
-| Schema-Modus | verhindert Schemakonflikt mit chat-service | `validate` (nicht `update`) | Abschnitt 4 |
-| RabbitMQ-Host/Port/Zugangsdaten | wie bei chat-service | aus `RABBITMQ_USERNAME`/`RABBITMQ_PASSWORD` | bestehend |
-| Batch-Grösse | Anzahl Nachrichten pro Transaktion, bevor regulär committet wird | 50 | Abschnitt 6, 9 |
-| Maximale Wartezeit vor Zwangs-Flush | verhindert, dass ein unvollständiger Batch unbegrenzt im Puffer hängt | 2 Sekunden | Abschnitt 6 (S7-Bezug) |
-| Prefetch-Count | gleichzeitig unbestätigte Nachrichten pro Instanz | = Batch-Grösse (50) | Abschnitt 9 |
-| Retry-Obergrenze | Anzahl Versuche, bevor ein Infrastrukturfehler zusätzlich in die DLQ geht | 10 | Abschnitt 6 |
-| Backoff, initial | erste Wartezeit vor erneutem Versuch | 1 Sekunde | Abschnitt 6 |
-| Backoff, Obergrenze | maximale Wartezeit zwischen Versuchen | 10 Sekunden | Abschnitt 6 |
+| `chat.persist` | **Queue** (kein Exchange genannt) | chat-service | batch-writer (M Instanzen) |
+| `chat.dlq` | Queue | RabbitMQ (automatisch) | - |
 
-**Begründung der Zahlenwerte**:
-- Batch-Grösse 50 → bei 1000 Nachrichten (S3/S4) entstehen rechnerisch 20
-  Transaktionen, deutlich unter der in S4 geforderten Obergrenze von 100.
-- Backoff 1s/2s/4s/8s (exponentiell, Deckel 10s) → die Summe der
-  Wartezeiten während eines 15-Sekunden-Ausfalls (S7) liegt bei rund 4-5
-  Versuchen, weit unter der Retry-Obergrenze von 10 - ein kurzer Ausfall
-  löst also kein fälschliches DLQ-Routing aus.
-- Maximale Wartezeit vor Zwangs-Flush 2s → verhindert, dass die 300
-  Nachrichten aus S7 bei geringer Stückzahl unnötig lange im Puffer
-  hängen, bevor sie überhaupt einen Schreibversuch auslösen.
+**Begründung, warum keine eigene `TopicExchange` für `chat.persist`**: Im
+Unterschied zu `chat.delivery`, das in derselben Tabelle ausdrücklich als
+*"Exchange (fanout)"* geführt wird, steht bei `chat.persist` nur "Queue".
+Das ist eine bewusste Unterscheidung im Dokument, kein Zufall:
+`chat.delivery` braucht einen Fanout-Exchange, weil mehrere
+`web-gateway`-Instanzen gleichzeitig mitlesen sollen (3.5: *"jede Instanz
+bindet eine eigene, exklusive Queue"*). `chat.persist` braucht das nicht -
+alle `batch-writer`-Instanzen teilen sich dieselbe Queue
+(Competing Consumers, 3.5 letzter Absatz). chat-service veröffentlicht
+deshalb direkt auf die Queue `chat.persist` (Standard-Exchange, Routing-Key
+= Queue-Name), ohne zusätzlichen benannten Exchange dazwischen.
 
-Diese Werte sind Empfehlungen für die Spezifikation und müssen im
-Umsetzungsplan nicht zwingend 1:1 übernommen werden, sollten aber die
-gleiche Konsistenz-Rechnung gegen S3/S4/S7 nachweisen, falls sie geändert
-werden.
+**Dead-Lettering, 3 Versuche (PLANUNG.md 3.5: *"nach 3 fehlgeschlagenen
+Versuchen"*)**:
 
-**Kein HTTP-Server zwingend nötig**: Da `batch-writer` keine REST-API hat
-(Abschnitt 1), ist offen, ob überhaupt ein Actuator-Health-Endpunkt intern
-betrieben wird. Falls ja, veröffentlicht er keinen Port (Projektregel).
-Diese Detailfrage gehört in `docs/plan-batch-writer.md`.
+Mit einfachem `NACK(requeue=true)` ohne Verzögerung wären 3 Versuche
+innerhalb von Millisekunden verbraucht - ein 15-Sekunden-Ausfall (S7)
+hätte dann *garantiert* Nachrichten in der DLQ zur Folge, obwohl S7 das
+Gegenteil verlangt. Deshalb: zwischen den Versuchen liegt eine **feste
+Wartezeit von 15 Sekunden**, technisch über eine Retry-Queue mit
+Nachrichten-TTL (die Nachricht landet nach Ablauf der TTL automatisch
+wieder in `chat.persist`, kein aktives Warten im Consumer-Code).
+
+Rechnung gegen S7 (Postgres 15s offline): Versuch 1 bei t=0 (schlägt fehl,
+Postgres ist down), Versuch 2 bei t=15 (knapp, Postgres kommt gerade
+hoch), Versuch 3 bei t=30 (Postgres ist sicher wieder da, gelingt). Erfolg
+spätestens bei t≈30s - deutlich innerhalb der 90-Sekunden-Grenze aus S7.
+
+Nach dem dritten erfolglosen Versuch: Nachricht geht nach `chat.dlq`
+(DLQ-Routing über das `x-dead-letter-exchange`-Argument der Retry-Queue).
+
+**Kein separates `chat.delivery` in dieser Abgabe**: chat-service
+veröffentlicht laut PLANUNG.md 3.4 sowohl nach `chat.persist` als auch
+nach `chat.delivery`. Da `web-gateway` nicht Teil dieser Abgabe ist, bindet
+niemand eine Queue an `chat.delivery` - Nachrichten dorthin verschwinden
+folgenlos (ein Fanout-Exchange ohne gebundene Queue verwirft still). Das
+ist beabsichtigt und wird hier nur festgehalten, damit es nicht wie ein
+Bug aussieht.
 
 ---
 
-## 11. Abnahmekriterien
+## 4. Datenmodell und Konfiguration
 
-| Szenario | Vorgabe | Adressiert durch |
+**Woher das feststeht**: PLANUNG.md 3.7 (ER-Diagramm), wortwörtlich
+übernommen, kein eigener Entwurf.
+
+### 4.1 Tabelle `message`
+
+| Spalte | Typ | Constraint | Begründung |
+|---|---|---|---|
+| `id` | UUID | PRIMARY KEY | "vom chat-service vergeben" (3.7); zugleich Idempotenz-Schlüssel (3.6) |
+| `room_id` | UUID | NOT NULL | Fremdschlüssel auf `room.id`, kein `REFERENCES`-Constraint, da `ROOM` nicht Teil dieser Abgabe ist (würde die Tabelle an eine nicht existierende Tabelle binden) |
+| `sender_id` | VARCHAR | NOT NULL | "sub aus Keycloak" (3.7) |
+| `sender_name` | VARCHAR | NOT NULL | "denormalisiert" (3.7) |
+| `content` | TEXT | NOT NULL | Nachrichtentext |
+| `sent_at` | TIMESTAMPTZ | NOT NULL | von chat-service gesetzt (3.4), nicht von batch-writer |
+
+**Index**: `(room_id, sent_at DESC)` - PLANUNG.md 3.7 wörtlich: *"das ist
+die einzige Abfrage im Lesepfad"*. Wird hier bereits angelegt, auch wenn
+der Lesepfad selbst nicht Teil dieser Abgabe ist, weil die Tabelle sonst
+später erneut angefasst werden müsste.
+
+**Wo das Schema entsteht**: Da `batch-writer` bewusst `JdbcTemplate` statt
+JPA verwendet (PLANUNG.md 2.1), gibt es kein `ddl-auto`, das das Schema
+automatisch erzeugen könnte. Das Schema entsteht über ein SQL-Skript
+(`infrastructure/postgres/init.sql` bzw. ein batch-writer-eigenes
+Migrationsskript), das beim ersten Start von PostgreSQL ausgeführt wird -
+**nicht** durch chat-service oder batch-writer zur Laufzeit. Genauer
+Mechanismus (einmaliges Init-Skript vs. Flyway) ist eine Umsetzungsfrage,
+siehe `docs/plan-batch-writer.md`.
+
+### 4.2 Konfiguration
+
+| Variable | Bedeutung | Quelle |
 |---|---|---|
-| S1 | `mvn clean test` im Wurzelverzeichnis, ein Lauf, alles grün | Root-Build (Abschnitt 0, Entscheidung 15) - betrifft das Gesamtprojekt, nicht den fachlichen Teil dieser Spezifikation |
-| S2 | Frischer Klon, `docker compose up -d --build`, alle Dienste laufen, kein Dienst veröffentlicht einen Port | `batch-writer` fügt sich ohne Port in die bestehende `docker-compose.yml` ein (Abschnitt 1, Abgrenzung) |
-| S3 | 1000 Nachrichten über `POST /messages`, nach spätestens 60s alle in der Tabelle, Queue leer | Batching (Abschnitt 6, 10) |
-| S4 | `batch-writer` gestoppt, 1000 Nachrichten gesendet, dann gestartet: nichts verloren, höchstens 100 Transaktionen | Durable Queue (Abschnitt 3), Batching (Abschnitt 6, 10) |
-| S5 | Dieselbe Nachricht zweimal direkt in `chat.persist`, nur mit Header `content_type`: genau eine Zeile, nichts in `chat.dlq` | Nachrichtenvertrag (Abschnitt 2), Duplikatbehandlung (Abschnitt 5) |
-| S6 | Zwei Instanzen, 1000 Nachrichten: beide hängen an der Queue, alle da, keine doppelt | Verhalten bei mehreren Instanzen (Abschnitt 9), Duplikatbehandlung (Abschnitt 5) |
-| S7 | Postgres 15s offline, 300 Nachrichten gesendet, Postgres danach wieder gestartet: binnen höchstens 90s alle gespeichert, ohne manuellen Neustart | Verhalten bei Datenbankausfall (Abschnitt 8), Retry-Verhalten (Abschnitt 6), Konfiguration (Abschnitt 10) |
-| S8 | Quelltext folgt `CLAUDE.md` (keine Streams, Kommentar über jeder Klasse/Methode), `.env` nicht im Repo | Umsetzungsrichtlinie, nicht Teil des fachlichen Verhaltens dieser Spezifikation - gilt für `docs/plan-batch-writer.md` und die Implementierung |
+| `POSTGRES_USER` | Datenbank-Benutzer | PLANUNG.md/Aufgabenstellung: direkt, keine Umbenennung |
+| `POSTGRES_PASSWORD` | Datenbank-Passwort | s. o. |
+| `POSTGRES_DB` | Datenbankname | s. o. |
+| `RABBITMQ_DEFAULT_USER` | RabbitMQ-Benutzer | analog zu bisherigem Muster |
+| `RABBITMQ_DEFAULT_PASS` | RabbitMQ-Passwort | analog zu bisherigem Muster |
+| Batch-Grösse | 500 Nachrichten | PLANUNG.md 3.6, 4.1 wörtlich: "Stapelgrösse 500 Nachrichten oder 200 ms" |
+| Max. Wartezeit vor Flush | 200 ms | s. o. |
+| Retry-Verzögerung | 15 s | eigene Entscheidung, siehe Abschnitt 3, Begründung gegen S7 gerechnet |
+| Retry-Obergrenze | 3 Versuche | PLANUNG.md 3.5 wörtlich |
+| Queue-Name | `chat.persist` | PLANUNG.md 3.5 |
+| DLQ-Name | `chat.dlq` | PLANUNG.md 3.5 |
+
+Alle Variablen kommen direkt und ohne Umbenennung aus `.env.example` -
+keine zusätzliche Zuordnungsebene wie in der Vorfassung.
 
 ---
 
-## 12. Offene Punkte für docs/plan-batch-writer.md
+## 5. Verhalten
 
-Diese Spezifikation legt das Verhalten fest, aber bewusst nicht die
-technische Umsetzung im Detail. Folgendes gehört in den Umsetzungsplan:
+### 5.1 Normalfall
 
-- Genauer Mechanismus für Backoff und Retry-Zähler (z. B. RabbitMQ
-  `x-death`-Header auswerten vs. eigene Retry-Queue mit TTL vs. In-Memory-
-  Wartezeit vor dem Reject).
-- Reihenfolge der Umsetzung: Anpassung chat-service (Nachrichtenvertrag,
-  Entfernen `MessageConsumer`, Schemaänderung) vor erstem Start von
-  `batch-writer`.
-- Konkreter Aufbau der Testumgebung (Testcontainers für RabbitMQ und
-  PostgreSQL) für S3-S7.
-- Ob und wie ein interner Health-Check (Actuator) betrieben wird.
-- Konkrete Docker-Compose-Ergänzung (Service-Definition, Umgebungsvariablen,
-  `depends_on`).
+Nachrichten aus `chat.persist` werden gepuffert, bis **500 Stück**
+erreicht sind **oder 200 ms** vergangen sind (PLANUNG.md 3.6,
+Flussdiagramm), je nachdem, was zuerst eintritt. Dann: ein Bulk-Insert
+(`JdbcTemplate.batchUpdate`, `ON CONFLICT (id) DO NOTHING`), danach ein
+gemeinsames ACK für den ganzen Stapel. Das ist At-least-once (PLANUNG.md
+3.6): erst nach erfolgreichem COMMIT wird bestätigt.
+
+### 5.2 Duplikate (S5)
+
+Zwei Nachrichten mit identischem `id` führen zu genau einer Zeile -
+`ON CONFLICT (id) DO NOTHING` verwirft die zweite beim Einfügen, ohne
+Fehler, ohne DLQ-Eintrag. Das ist keine Sonderbehandlung, sondern dieselbe
+Bulk-Insert-Anweisung wie im Normalfall - Duplikate sind kein eigener
+Codepfad, sondern eine Eigenschaft der SQL-Anweisung selbst.
+
+**Wichtig für die Messung**: Da die Szenarien laut Aufgabenstellung ohne
+Aufräumen nacheinander auf demselben Stack laufen, bedeutet "genau eine
+Zeile" bei S5 nicht "eine Zeile in der ganzen Tabelle" (die enthält zu dem
+Zeitpunkt längst Tausende Zeilen aus S3/S4), sondern: genau eine Zeile mit
+dieser spezifischen `id`.
+
+### 5.3 Fehlerhafte oder nicht verarbeitbare Nachrichten
+
+Jeder Fehler beim Verarbeiten eines Batches (ungültiges JSON, fehlendes
+Pflichtfeld, Datenbank nicht erreichbar) führt zum selben Ablauf:
+Retry über die Retry-Queue (15 s Verzögerung), bis zu 3 Versuche
+insgesamt, danach `chat.dlq` (siehe Abschnitt 3). PLANUNG.md unterscheidet
+nicht zwischen Fehlerursachen, deshalb hier auch nicht - eine Unterscheidung
+wäre eine Abstraktion, die das Dokument nicht vorsieht.
+
+**Einschränkung, offen benannt**: Da ein Batch mehrere Nachrichten
+zusammenfasst, löst eine einzelne kaputte Nachricht im Batch denselben
+Retry für den **ganzen Batch** aus (PLANUNG.md 3.6 beschreibt Bestätigung
+und Fehlschlag nur auf Batch-Ebene, nicht pro Nachricht). Das kann dazu
+führen, dass 499 valide Nachrichten wegen einer einzigen kaputten erneut
+verarbeitet werden. Das ist eine direkte Konsequenz aus "ein Bulk-Insert
+pro Stapel" und wird hier nicht stillschweigend anders gelöst, als
+PLANUNG.md es vorsieht.
+
+### 5.4 Datenbankausfall (S7)
+
+Siehe Abschnitt 3 für die Herleitung der 15-Sekunden-Retry-Verzögerung.
+Zusätzlich: der `batch-writer`-Prozess selbst darf durch einen
+Datenbankfehler nicht abstürzen - ein nicht erreichbarer Postgres-Server
+ist ein zu behandelnder Zwischenzustand, kein fataler Fehler. Kein
+manueller Neustart (S7-Vorgabe wörtlich).
+
+### 5.5 Mehrere Instanzen (S6)
+
+RabbitMQ verteilt Nachrichten einer Queue automatisch auf mehrere
+verbundene Consumer (Competing Consumers, PLANUNG.md 3.5 letzter Absatz) -
+keine Zusatzlogik in `batch-writer` nötig. Die Eindeutigkeit aus 5.2 gilt
+unverändert auch hier, durchgesetzt durch denselben `ON CONFLICT (id) DO
+NOTHING` auf Datenbankebene, nicht durch Anwendungslogik - das ist
+notwendig, weil zwei Instanzen nie durch eine reine Anwendungsprüfung
+("gibt es das schon?") race-sicher gemacht werden können.
+
+---
+
+## 6. Abnahmekriterien
+
+Für jedes Szenario: Vorgabe, Messbefehl, Begründung, warum dieser Befehl
+das Richtige misst.
+
+**Hinweis zur gesamten Tabelle**: Da die Szenarien laut Aufgabenstellung
+ohne Aufräumen nacheinander auf demselben Stack laufen, sind "vorher"/
+"nachher"-Werte als **Differenzen** zu verstehen, nicht als Absolutwerte,
+ausser bei S5 (dort zählt die `id` der konkreten Testnachricht, nicht die
+Gesamtzahl).
+
+| # | Vorgabe | Messbefehl | Warum das misst, was gefordert ist |
+|---|---|---|---|
+| S1 | `mvn clean test`, ein Lauf, alles grün | `mvn clean test` im Repository-Root, Rückgabecode `0` | Rückgabecode ist die eindeutige, von Maven selbst garantierte Erfolgsmeldung |
+| S2 | Frischer Klon, `.env` aus `.env.example`, `docker compose up -d --build`, alle Dienste laufen, kein Port veröffentlicht | `docker compose ps` → alle Zeilen `State: running`; `docker compose config` → kein `ports:`-Eintrag | `docker compose ps` zeigt den tatsächlichen Laufzustand, `config` zeigt die deklarierten Portmappings unabhängig vom Laufzustand |
+| S3 | 1000 Nachrichten über `POST /messages`, binnen 60s alle in der Tabelle, Queue leer | Vorher: `docker compose exec postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SELECT COUNT(*) FROM message;"` notieren. 1000x `POST /messages`. Danach alle paar Sekunden erneut zählen, bis Differenz = 1000 oder 60s um; zusätzlich `docker compose exec rabbitmq rabbitmqctl list_queues name messages` für `chat.persist` → 0 | Differenzmessung statt Absolutwert, weil der Stack zwischen Szenarien nicht geleert wird (s. Hinweis oben) |
+| S4 | batch-writer gestoppt, 1000 gesendet, dann gestartet: nichts verloren, höchstens 100 Transaktionen | `docker compose stop batch-writer`; 1000x senden; Transaktionszähler vorher notieren: `docker compose exec postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -t -c "SELECT xact_commit FROM pg_stat_database WHERE datname='$POSTGRES_DB';"`; `docker compose start batch-writer`; nach Abschluss erneut zählen, Differenz der Zeilen = 1000, Differenz von `xact_commit` ≤ 100 | `pg_stat_database.xact_commit` ist Postgres' eigener, von aussen abfragbarer Transaktionszähler - kein Zählen im Anwendungscode nötig, das man manipulieren könnte |
+| S5 | Dieselbe Nachricht zweimal direkt in `chat.persist`, nur mit `content_type`-Header: genau eine Zeile, nichts in `chat.dlq` | Eine `id` wählen, zweimal mit identischem JSON-Body und nur `content_type: application/json` direkt in `chat.persist` veröffentlichen (z. B. `rabbitmqadmin publish`); danach `SELECT COUNT(*) FROM message WHERE id = '<id>';` → 1; `rabbitmqctl list_queues name messages` für `chat.dlq` → unverändert zum Stand vor S5 | Zählt gezielt die eine `id`, nicht die Gesamttabelle - robust gegenüber den Zeilen aus S3/S4 |
+| S6 | Zwei Instanzen, 1000 Nachrichten: beide an der Queue, alle da, keine doppelt | `docker compose up -d --build --scale batch-writer=2`; `rabbitmqctl list_consumers` → 2 Einträge für `chat.persist`; 1000 senden; danach `SELECT COUNT(*) FROM message WHERE id = ANY(<Liste der 1000 gesendeten ids>);` → genau 1000 | Da `id` Primärschlüssel ist, kann "doppelt" in der Tabelle gar nicht erst vorkommen - der eigentliche Test ist, ob alle 1000 *ankommen*, nicht ob keine doppelt sind |
+| S7 | Postgres 15s offline, 300 gesendet, danach wieder gestartet: binnen 90s alle 300 in der Tabelle, kein manueller Neustart | `docker compose stop postgres`; 300 senden; 15s warten; `docker compose start postgres`; alle paar Sekunden zählen bis Differenz = 300 oder 90s um; parallel `docker compose ps batch-writer` beobachten (`State` bleibt durchgehend `running`, `RestartCount` über `docker inspect` bleibt `0`) | Die Restart-Count-Prüfung stellt sicher, dass "läuft ohne Neustart" nicht durch eine Docker-Restart-Policy erschlichen wird, die den Container neu startet, statt ihn durchlaufen zu lassen |
+| S8 | Quelltext folgt `CLAUDE.md`, `.env` nicht im Repo | Manuelle Durchsicht von `batch-writer/src/` gegen `CLAUDE.md`-Regeln (keine Streams, Kommentar über jeder Klasse/Methode); `git log --all --full-history -- .env` → keine Treffer | `.gitignore` allein beweist nichts rückwirkend - der `git log`-Befehl prüft die tatsächliche Historie, nicht nur den aktuellen Zustand |
+
+---
+
+## 7. Entscheidungen zum Build- und Stack-Umfang
+
+Die folgenden zwei Punkte waren in einer früheren Fassung offen und sind
+jetzt entschieden:
+
+**`docker-compose.yml`-Bereinigung**: `keycloak`, `api-gateway`,
+`user-service` werden aus `docker-compose.yml` entfernt (Code bleibt im
+Repository liegen, nur nicht Teil dieses Stacks). Begründung: Alle acht
+Szenarien müssen bei der Abgabe reproduzierbar erfüllt sein; S2 prüft den
+kompletten `docker compose up -d --build`-Lauf, nicht nur die bewerteten
+Dienste. Ein fehlerhaft startender, nicht bewerteter Dienst wäre ein
+vermeidbares Risiko für ein Szenario, das tatsächlich zählt.
+
+**Eltern-POM-Umbau gilt für `chat-service` und `batch-writer`**, nicht für
+`api-gateway`/`user-service`. Begründung: aus demselben Grund wie oben -
+S1 prüft den kompletten Reactor-Build im Wurzelverzeichnis.
+`api-gateway`/`user-service` werden deshalb zusätzlich aus dem
+Root-`<modules>`-Eintrag entfernt (nicht nur aus `docker-compose.yml`),
+damit sie S1 ebenfalls nicht gefährden können, ohne etwas beizutragen.
+Sie bleiben als eigenständige, weiterhin per `spring-boot-starter-parent`
+buildbare Projekte bestehen, nur ausserhalb des für diese Abgabe
+geprüften Builds.
+
+## 8. Verbleibender offener Punkt
+
+- **Migrationsmechanismus fürs Schema** (Abschnitt 4.1): einmaliges
+  Postgres-Init-Skript oder ein Werkzeug wie Flyway - beides erfüllt "wo
+  entsteht das Schema" unterschiedlich gut testbar. Entscheidung gehört in
+  den Umsetzungsplan, nicht hierher, da sie eine Bau-Reihenfolge-Frage ist.
