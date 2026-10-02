@@ -1,111 +1,72 @@
-# Docker-Compose-Setup fuer die M321 Chat-App.
-# Alle Container kommunizieren ausschliesslich ueber das interne Netzwerk
-# "chat-network". Nur das Frontend veroeffentlicht einen Port nach aussen
-# (siehe CLAUDE.md und ARCHITECTURE.md, Punkt 3).
+# Docker-Compose-Setup fuer diese Abgabe (batch-writer).
+#
+# Enthaelt nur, was Teil dieser Abgabe ist: postgres, rabbitmq,
+# chat-service, batch-writer. keycloak, api-gateway und user-service sind
+# nicht Teil dieser Abgabe und deshalb nicht Teil dieses Stacks (Code
+# bleibt im Repository bestehen, siehe docs/spec-batch-writer.md,
+# Abschnitt 7) - sie sollen die fuer diese Abgabe geprueften Szenarien
+# nicht gefaehrden koennen.
+#
+# Kein Dienst veroeffentlicht einen Port (web-gateway, das den einzigen
+# Port haette, ist ebenfalls nicht Teil dieser Abgabe).
 
 services:
-
-  # ---------------------------------------------------------------------
-  # Infrastruktur
-  # ---------------------------------------------------------------------
 
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${DB_USERNAME:-chatapp}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-change-me}
-      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-chatapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-chat}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ../infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
-      - chat-network
-    # Kein "ports:" Eintrag: Postgres ist nur innerhalb des Docker-Netzwerks erreichbar.
+      - chat-net
+    # Kein "ports:" Eintrag.
 
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-chatapp}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-change-me}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-chatapp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-change-me}
     networks:
-      - chat-network
-    # Kein "ports:" Eintrag, auch die Management-UI bleibt intern (Projektregel!).
-    # Fuer lokales Debugging: Port-Mapping in einer eigenen, nicht eingecheckten
-    # docker-compose.override.yml ergaenzen.
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:25.0
-    command: start-dev --import-realm
-    environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-change-me}
-      KC_HOSTNAME_STRICT: "false"
-    volumes:
-      - ../infrastructure/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
-    networks:
-      - chat-network
-    # Kein "ports:" Eintrag: Keycloak wird spaeter ueber den Frontend-Reverse-Proxy
-    # erreicht, nicht direkt vom Host aus (siehe ARCHITECTURE.md, Punkt 3).
-
-  # ---------------------------------------------------------------------
-  # Backend-Services
-  # ---------------------------------------------------------------------
-
-  api-gateway:
-    build:
-      context: ../backend/api-gateway
-    depends_on:
-      - keycloak
-      - user-service
-      - chat-service
-    networks:
-      - chat-network
-    # Kein "ports:" Eintrag: Das Gateway ist laut Planung nur intern erreichbar.
-
-  user-service:
-    build:
-      context: ../backend/user-service
-    environment:
-      DB_USERNAME: ${DB_USERNAME:-chatapp}
-      DB_PASSWORD: ${DB_PASSWORD:-change-me}
-    depends_on:
-      - postgres
-      - keycloak
-    networks:
-      - chat-network
+      - chat-net
+    # Kein "ports:" Eintrag, auch die Management-UI bleibt intern.
 
   chat-service:
     build:
-      context: ../backend/chat-service
+      context: ..
+      dockerfile: backend/chat-service/Dockerfile
     environment:
-      DB_USERNAME: ${DB_USERNAME:-chatapp}
-      DB_PASSWORD: ${DB_PASSWORD:-change-me}
-      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-chatapp}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-change-me}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-chatapp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-change-me}
+    depends_on:
+      - rabbitmq
+    networks:
+      - chat-net
+    # Kein "ports:" Eintrag - Zugriff fuer die Szenarien ueber
+    # "docker compose exec" bzw. innerhalb des Netzwerks chat-net.
+
+  batch-writer:
+    build:
+      context: ..
+      dockerfile: backend/batch-writer/Dockerfile
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chatapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-chat}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-chatapp}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-change-me}
     depends_on:
       - postgres
       - rabbitmq
-      - keycloak
     networks:
-      - chat-network
-
-  # ---------------------------------------------------------------------
-  # Frontend - folgt in einem separaten Sprint, hier nur vorbereitet.
-  # Dies ist der EINZIGE Dienst, der einen Port veroeffentlichen darf.
-  # ---------------------------------------------------------------------
-
-  # frontend:
-  #   build:
-  #     context: ../frontend
-  #   ports:
-  #     - "80:80"
-  #   depends_on:
-  #     - api-gateway
-  #   networks:
-  #     - chat-network
+      - chat-net
+    # Kein "ports:" Eintrag - batch-writer hat keine REST-Schnittstelle.
 
 networks:
-  chat-network:
+  chat-net:
     driver: bridge
 
 volumes:
