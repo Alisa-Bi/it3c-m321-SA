@@ -1,0 +1,35 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: batch-writer
+  datasource:
+    url: jdbc:postgresql://postgres:5432/${POSTGRES_DB:chat}
+    username: ${POSTGRES_USER:chatapp}
+    password: ${POSTGRES_PASSWORD:change-me}
+  rabbitmq:
+    host: rabbitmq
+    port: 5672
+    username: ${RABBITMQ_DEFAULT_USER:chatapp}
+    password: ${RABBITMQ_DEFAULT_PASS:change-me}
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 500
+
+batch-writer:
+  batch-size: 500
+  max-wait-ms: 200
+  retry-delay-ms: 15000
+  max-attempts: 3
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    ch.m321.chatapp: INFO
