@@ -100,21 +100,28 @@ erzwingen.
 ## 8. Senden und Speichern von Nachrichten sind entkoppelt
 
 `POST /api/messages` speichert **nicht** direkt in der Datenbank. Stattdessen
-prüft `MessageService.publishNewMessage(...)` nur die Eingabe und übergibt
-sie über den `MessageProducer` an RabbitMQ; die eigentliche Speicherung
-passiert ausschliesslich im `MessageConsumer`, der die Nachricht aus der
-Queue liest und `MessageService.createMessage(...)` aufruft. Der Endpunkt
+prüft `MessageService.publishNewMessage(...)` nur die Eingabe, vergibt bei
+Bedarf eine `messageId` und übergibt die Nachricht über den
+`MessageProducer` an RabbitMQ (Routing-Key `chat.persist`). Der Endpunkt
 antwortet deshalb mit `202 Accepted`, nicht mit der fertig gespeicherten
 Nachricht.
 
-Begründung: Das entspricht exakt dem in der Planung dokumentierten
-Nachrichtenfluss (Chat Service → RabbitMQ → Message Consumer → Speicherung).
-Es entkoppelt den Schreibpfad vom Antwortpfad - der Sender wartet nicht auf
-den Datenbank-Schreibvorgang - und ist die Grundlage dafür, dass später
-mehrere Instanzen des Chat-Service dieselbe Queue konsumieren können, ohne
-dass REST-Handler und Persistenz aneinander gekoppelt sind. Wer die
-gespeicherte Nachricht sehen will, ruft `GET /api/messages/{roomId}` auf
-oder erhält sie (sobald implementiert) per WebSocket-Broadcast.
+**Update**: Die eigentliche Speicherung lief ursprünglich über einen
+eigenen `MessageConsumer` innerhalb von chat-service. Mit der Einführung
+von `batch-writer` als eigenständigem Dienst wurde dieser Consumer entfernt
+(siehe `docs/plan-batch-writer.md`, Schritt 4) - chat-service ist seitdem
+reiner Producer und bleibt gleichzeitig Schema-Owner der Tabelle `messages`
+(siehe `docs/spec-batch-writer.md`, Abschnitt 1 und 4). Die vollständige
+Begründung für diese Aufteilung steht in `docs/spec-batch-writer.md`.
+
+Begründung der ursprünglichen Entkopplung bleibt gültig: Sie trennt den
+Schreibpfad vom Antwortpfad - der Sender wartet nicht auf den
+Datenbank-Schreibvorgang - und ist die Grundlage dafür, dass mehrere
+Instanzen des konsumierenden Dienstes dieselbe Queue verarbeiten können,
+ohne dass REST-Handler und Persistenz aneinander gekoppelt sind. Wer die
+gespeicherte Nachricht sehen will, ruft weiterhin `GET /api/messages/{roomId}`
+auf (chat-service liest nach wie vor aus derselben Tabelle) oder erhält sie
+(sobald implementiert) per WebSocket-Broadcast.
 
 `ChatRoom`-Erstellung bleibt bewusst synchron und geht direkt in die
 Datenbank: Chaträume werden selten und nicht unter Lastspitzen angelegt,
