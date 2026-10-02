@@ -4,44 +4,24 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
+    <!--
+        Parent ist das Maven-Elternprojekt im Repository-Root (PLANUNG.md
+        Abschnitt 5), nicht mehr spring-boot-starter-parent direkt.
+    -->
     <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.3.5</version>
-        <relativePath/>
+        <groupId>ch.m321.chatapp</groupId>
+        <artifactId>chat-app-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <groupId>ch.m321.chatapp</groupId>
     <artifactId>chat-service</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
     <name>chat-service</name>
     <description>
-        Verwaltet Chatraeume, Nachrichten, den RabbitMQ-Nachrichtentransport
-        und die WebSocket-Echtzeitkommunikation der M321 Chat-App.
+        Nimmt neue Chatnachrichten entgegen, validiert sie, vergibt id und
+        sentAt und veroeffentlicht sie auf chat.persist. Beruehrt keine
+        Datenbank (siehe docs/spec-batch-writer.md, Abschnitt 1).
     </description>
-
-    <properties>
-        <java.version>21</java.version>
-        <testcontainers.version>1.21.4</testcontainers.version>
-    </properties>
-
-    <!--
-        Testcontainers-BOM nur fuer den Testumfang: sie startet in Tests
-        einen echten PostgreSQL-Container statt einer In-Memory-Datenbank,
-        damit Constraints/Indizes wirklich gegen Postgres geprueft werden,
-        nicht gegen ein abweichendes Test-Ersatzsystem.
-    -->
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.testcontainers</groupId>
-                <artifactId>testcontainers-bom</artifactId>
-                <version>${testcontainers.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -50,28 +30,11 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-websocket</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -86,16 +49,6 @@
         <dependency>
             <groupId>org.springframework.amqp</groupId>
             <artifactId>spring-rabbit-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
