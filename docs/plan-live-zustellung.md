@@ -274,7 +274,10 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `feat(chat-service): Nachholen und Live-Zustellung ohne Lücke verbinden`
 
 **Geprüft und korrigiert:**
--
+- `ReplayHandoverTest` (6 Tests), `ReplayBufferOverflowIntegrationTest` und `DatabaseUnavailableIntegrationTest` sind grün, `mvn clean test` ist grün. Geprüft sind: Nachholen aus der Datenbank und danach Live-Betrieb; zehn Live-Nachrichten während einer künstlich verzögerten Datenbankabfrage gehen nicht verloren, erscheinen nicht doppelt und kommen in der richtigen Reihenfolge, danach funktioniert die Live-Zustellung; Nachrichten im Schnappschuss und im Zwischenspeicher kommen genau einmal; ungültige (400), unbekannte (409) und fremde (400) `Last-Event-ID` lassen keine Verbindung zurück; ohne Datenbank antwortet `/stream` mit `Last-Event-ID` mit 503; mit Grenze 5 und acht Live-Nachrichten endet nur die Nachhol-Verbindung, eine zweite Verbindung im Raum bekommt weiter alles.
+- Entscheidung ausserhalb des Auftrags: Die Registry führt jetzt `SseConnection` statt `SseEmitter`. Die Verbindung kennt Live-Modus und Nachhol-Modus und hat zwei Sperren: eine für den Zustand (nie während eines Netzwerkzugriffs gehalten, damit der eine Verteil-Thread nicht an einem langsamen Nachholen hängt) und eine für das einzelne Schreiben, die auch den Heartbeat einschliesst. Das Nachholen läuft auf einem eigenen Thread-Pool mit 16 Threads.
+- Korrigiert: Im ersten Lauf scheiterte `messagesInSnapshotAndPendingBuffer_areSentOnce` mit einem Timeout. Ursache war der Test: Er verzögerte `RecentMessageBuffer.snapshot()` mit einem Mockito-Spion. Die Methode ist `synchronized`, und der Spion läuft innerhalb der Methode, hielt also die Sperre des Puffers und blockierte den Dispatcher. Der Test verzögert jetzt die Cursor-Prüfung (`findPosition`), die Verbindung ist dann schon angemeldet und der Schnappschuss entsteht erst nach den Live-Nachrichten. Der Dienstcode musste nicht geändert werden.
+- Bekannte Grenze: Bricht ein Client die Verbindung während des Nachholens ab, meldet Spring beim Beenden den Fehler im Log. Die Verbindung wird dabei richtig abgemeldet.
 
 ---
 
