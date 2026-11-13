@@ -251,7 +251,11 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `feat(chat-service): verpasste Nachrichten anhand der Last-Event-ID bestimmen`
 
 **Geprüft und korrigiert:**
--
+- `ReplayServiceTest` und `ReplayJsonFormatIntegrationTest` sind grün, `mvn clean test` ist grün. Geprüft sind: nur Nachrichten nach dem Cursor in der richtigen Reihenfolge, Cursor als letzte Nachricht ergibt eine leere Liste, Nachrichten anderer Räume fehlen, gleicher Zeitstempel mit `id` als Tie-Breaker, Cursor nur im Ringbuffer, Zusammenführen ohne Doppelte, unbekannter Cursor (409), Cursor eines anderen Raums in der Datenbank (400), Cursor nur im Ringbuffer eines anderen Raums (409) und Datenbank nicht erreichbar bei vorhandenem Cursor im Ringbuffer (503). S11 besteht: Eine über `POST /messages` veröffentlichte Nachricht (Umlaute, Anführungszeichen, Backslash, HTML-Zeichen, Emoji) ergibt nach dem Speichern und Nachholen denselben JSON-Text.
+- Beim Lesen des Codes beachtet: `java.util.UUID.compareTo` rechnet mit Vorzeichen und würde `id`s ab `8` vor `id`s von `0` bis `7` sortieren. PostgreSQL vergleicht `uuid` Byte für Byte ohne Vorzeichen. Der `ReplayService` vergleicht deshalb die beiden 64-Bit-Hälften mit `Long.compareUnsigned`. Ein Test mit `id`s `0…01`, `7fff…`, `8000…`, `c000…` und `ffff…` bei gleichem Zeitstempel belegt, dass Datenbank und Ringbuffer dieselbe Reihenfolge ergeben.
+- Entscheidung ausserhalb des Auftrags: Der Dienst bietet zwei Schritte an (`resolveCursor` und `findMissed`), weil Schritt 12 den Cursor vor dem Senden von HTTP 200 prüfen muss. `missedMessages` ruft beide nacheinander auf. Bei einer Nachricht in Datenbank und Ringbuffer bleibt der ursprüngliche JSON-Text aus dem Ringbuffer.
+- Bekannte Grenze: Die Abfrage hat keine Obergrenze für die Zahl der Nachrichten. Ein Client, der sehr lange weg war, erhält alles nach dem Cursor. Eine Obergrenze würde Nachrichten stillschweigend weglassen, deshalb wurde sie nicht eingebaut.
+- Korrigiert: Am Ergebnis der KI war keine Korrektur nötig.
 
 ---
 
