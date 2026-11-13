@@ -320,7 +320,12 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `docs(chat-service): Stand, Endpunkt und Grenzen der Live-Zustellung beschreiben`
 
 **Geprüft und korrigiert:**
--
+- Abnahme auf einem frischen Klon in `E:\abnahme-bewertung-2` (`.env` aus `.env.example`, `docker compose up -d --build`): `mvn clean test` im Wurzelverzeichnis endet mit BUILD SUCCESS (chat-service und batch-writer SUCCESS, Docker lief für Testcontainers). Das Skript `scripts/pruefe-live-zustellung.ps1` ohne Parameter meldet «25 Kriterien geprueft, 0 nicht erfuellt» für S3 bis S7.
+- Belegt durch diese Läufe: S1 (`mvn clean test`, darin laufen auch die Testklassen für S9 `MessageSizeLimitIntegrationTest`, S10 `SentAtPrecisionTest` und S11 `ReplayJsonFormatIntegrationTest`), S3 (400 Nachrichten an beiden Instanzen, je `id` einmal, Reihenfolge je Absender), S4 (zwei Queues mit je einem Consumer, nach dem Herunterskalieren eine Queue nach 0.9 s), S5 (100 Nachrichten ohne PostgreSQL und `batch-writer`, danach 100 gespeichert), S6 (höchstens 1000 Nachrichten je Queue bei 5000 gesendeten, aktiver Client erhält alle 5000), S7 (50 fehlende Nachrichten in Reihenfolge, keine doppelt, danach live).
+- S2 und S8 wurden mit den Befehlen aus der Spezifikation geprüft: `docker compose config` enthält kein `published:`, `git ls-files .env` ist leer, die Suche nach `.stream(`, `Stream<`, `.map(`, `.filter(` und `.collect(` in `backend/chat-service/src` einschliesslich der Tests hat keine Treffer. Der Kommentar über jeder Klasse und Methode wurde mit einem Suchlauf über alle Dateien geprüft.
+- Korrigiert: Dabei fehlten Kommentare an `ChatServiceApplication.main` und an `MessageController.sendMessage` (aus Bewertung 1). Beide sind ergänzt. Die Javadoc von `NewMessageRequest` und `MessageService` behauptete noch, der Dienst berühre keine Datenbank. Sie beschreibt jetzt, dass der `chat-service` nie schreibt und nur beim Nachholen liest.
+- Entscheidung ausserhalb des Auftrags: Das README liegt in diesem Repository unter `docs/README.md`. Dort steht jetzt eine Tabelle S1 bis S11 mit Befehl oder Test pro Szenario. Sie nennt kein Szenario als bestanden. Die Ergebnisse stehen in diesem Feld.
+- Bekannte Grenze: In den Testläufen erscheinen lange ERROR- und WARN-Meldungen wie «Failed to check/redeclare auto-delete queue(s)» und «Connection refused». Sie stammen von zwischengespeicherten Spring-Kontexten, deren Testcontainer schon beendet sind, und haben keinen Einfluss auf das Ergebnis. Die Zeile «Hinweis: Queue der pausierten Instanz blieb bestehen» in S6 ist erwartet, weil die pausierte Instanz ihre Verbindung noch hält.
 
 ---
 
