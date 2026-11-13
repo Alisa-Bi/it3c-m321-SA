@@ -10,6 +10,11 @@ spring:
     username: ${RABBITMQ_DEFAULT_USER:chatapp}
     password: ${RABBITMQ_DEFAULT_PASS:change-me}
 
+chat:
+  # Maximale Groesse des Nachrichteninhalts in UTF-8-Bytes (siehe
+  # docs/spec-live-zustellung.md, Abschnitt 7). Per Umgebungsvariable ueberschreibbar.
+  max-content-bytes: ${CHAT_MAX_CONTENT_BYTES:4096}
+
 management:
   endpoints:
     web:

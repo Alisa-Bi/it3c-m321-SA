@@ -43,6 +43,7 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-chatapp}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-change-me}
+      CHAT_MAX_CONTENT_BYTES: ${CHAT_MAX_CONTENT_BYTES:-4096}
     depends_on:
       - rabbitmq
     networks:
