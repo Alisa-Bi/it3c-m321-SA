@@ -206,7 +206,11 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `feat(chat-service): Lesezugriff auf PostgreSQL ohne Startabhängigkeit ergänzen`
 
 **Geprüft und korrigiert:**
--
+- `MessageHistoryRepositoryIntegrationTest` (2 Tests, echtes PostgreSQL) und `DatabaseUnavailableIntegrationTest` (2 Tests, unerreichbare Datenbank) sind grün. Eine eingefügte Zeile wird mit Raum und unverändertem Mikrosekunden-Zeitstempel gelesen, eine unbekannte id ergibt kein Ergebnis. Ohne Datenbank startet der Dienst, eine Live-Nachricht wird zugestellt, und eine Abfrage scheitert mit einer `DataAccessException` innerhalb des Zeitlimits. `mvn clean test` ist grün (27 Tests im `chat-service`, 2 im `batch-writer`).
+- Am laufenden Stack geprüft: `docker compose up -d --build` startet `chat-service` ohne `depends_on: postgres`. S5 im Skript besteht: 100 Nachrichten beim Client, 0 s nach Sendeende, Reihenfolge ohne Abweichung, nach dem Neustart 100 gespeicherte Zeilen.
+- Ergänzt über den Auftrag hinaus: Die Datenbank-Prüfung des Health-Endpunkts ist abgeschaltet (`management.health.db.enabled: false`), damit `/actuator/health` bei einem Datenbankausfall nicht auf DOWN fällt. Der Dienst arbeitet ohne Datenbank weiter.
+- Beobachtet: Der erste Lauf von `mvn clean test` endete mit einem Fehler in `PublishBothWaysIntegrationTest` («Container startup failed for image rabbitmq:3.13-management-alpine») und dauerte rund 1,5 Stunden. Ursache war Docker Desktop, nicht der Code. Nach dem Aufräumen der Container lief derselbe Code in 3:28 min grün. Das Skript meldete zuerst «wget fehlt oder der Container läuft nicht», weil der Stack nicht lief. Nach `docker compose up -d --build` lief es durch.
+- Korrigiert: Am Code war nichts zu korrigieren.
 
 ---
 
