@@ -99,7 +99,7 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Geprüft und korrigiert:**
 - Erster Lauf von `StreamEndpointIntegrationTest`: 4 von 5 Tests grün, `twoConnections_bothRegisteredAndReceiveHeartbeat` lief in ein Timeout.
 - Ursache: Der Test erwartete die Zeile `: heartbeat` mit Leerzeichen, Spring schreibt Kommentare aber als `:heartbeat`. Die Heartbeats kamen an (die Verbindungen blieben offen und wurden korrekt eingetragen). Der Fehler lag im Test, nicht im Dienst.
-- Korrigiert: Erwartete Zeile im Test auf `:heartbeat` geändert. Danach alle 5 Tests von StreamEndpointIntegrationTest grün, und `mvn clean test` grün.
+- Korrigiert: Erwartete Zeile im Test auf `:heartbeat` geändert. Danach <Ergebnis des zweiten Laufs eintragen, z. B. «alle 5 Tests grün, `mvn clean test` grün»>.
 
 ---
 
