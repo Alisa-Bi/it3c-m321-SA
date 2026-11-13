@@ -17,9 +17,10 @@ import java.util.UUID;
 /**
  * Fachlogik rund um das Entgegennehmen neuer Chatnachrichten.
  *
- * chat-service speichert nichts selbst (siehe docs/spec-batch-writer.md,
- * Abschnitt 1) - diese Klasse validiert nur, vergibt id und sentAt
- * (PLANUNG.md 3.4) und gibt die fertige Nachricht an RabbitMQ weiter.
+ * chat-service schreibt nie in die Datenbank (siehe docs/spec-batch-writer.md,
+ * Abschnitt 1); lesend greift er nur beim Nachholen darauf zu (Paket history).
+ * Diese Klasse validiert nur, vergibt id und sentAt (PLANUNG.md 3.4) und gibt
+ * die fertige Nachricht an RabbitMQ weiter.
  * batch-writer ist der einzige Datenbank-Schreiber.
  */
 @Service

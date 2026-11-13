@@ -27,6 +27,10 @@ public class MessageController {
 
     private final MessageService messageService;
 
+    /**
+     * Nimmt eine neue Nachricht per POST entgegen und antwortet mit 202, sobald sie veroeffentlicht ist.
+     * Es gibt sie, damit Clients Nachrichten senden koennen, ohne die Queues zu kennen.
+     */
     @PostMapping("/messages")
     public ResponseEntity<Void> sendMessage(@RequestBody NewMessageRequest request) {
         messageService.publishNewMessage(request);
