@@ -41,6 +41,10 @@ chat:
   delivery:
     # Obergrenze der bereitliegenden Nachrichten in der Zustell-Queue je Instanz.
     queue-max-length: ${CHAT_DELIVERY_QUEUE_MAX_LENGTH:990}
+  ringbuffer:
+    # Ringbuffer der letzten Nachrichten (Spezifikation, Abschnitt 5.4 und 7).
+    per-room: ${CHAT_RINGBUFFER_PER_ROOM:5000}
+    total: ${CHAT_RINGBUFFER_TOTAL:10000}
   sse:
     # Lebensdauer einer SSE-Verbindung in Millisekunden (Spezifikation, Abschnitt 7).
     timeout: ${CHAT_SSE_TIMEOUT:1800000}

@@ -1,5 +1,6 @@
 package ch.m321.chatapp.chat.delivery;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -7,6 +8,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -22,7 +27,15 @@ import java.util.UUID;
  * Wer diese Klasse parallel aufruft, bricht diese Garantie.
  *
  * Der JSON-Text wird nicht neu serialisiert, sondern genau so weitergegeben, wie er
- * aus der Queue kam. Nur id und roomId werden ausgelesen.
+ * aus der Queue kam. Nur id, roomId und sentAt werden ausgelesen.
+ *
+ * Puffer vor Verteilung: Jede Nachricht wird zuerst in den RecentMessageBuffer eingetragen
+ * und erst danach an die Verbindungen gesendet. Ein Client, der sich waehrend des Nachholens
+ * neu anmeldet, findet eine Nachricht so immer an mindestens einer Stelle: im Schnappschuss
+ * des Puffers (sie wurde schon eingetragen) oder bei seiner Verbindung (sie wird erst danach
+ * verteilt). Waere die Reihenfolge umgekehrt, koennte eine Nachricht an der alten
+ * Verbindungsliste vorbeigehen und noch nicht im Puffer stehen, wenn der Client den Schnappschuss
+ * liest. Dann ginge sie verloren (siehe Spezifikation, Abschnitt 5.3).
  *
  * Ein langsamer Client haelt den einen Verteil-Thread auf, solange sein Schreiben
  * blockiert. Dagegen schuetzt die Laengengrenze der Queue (Schritt 7).
@@ -33,25 +46,41 @@ public class LiveDispatcher {
 
     private final SseConnectionRegistry registry;
     private final ObjectMapper objectMapper;
+    private final RecentMessageBuffer buffer;
 
-    // registry: die offenen Verbindungen. objectMapper: nur zum Auslesen von id und roomId.
-    public LiveDispatcher(SseConnectionRegistry registry, ObjectMapper objectMapper) {
+    // registry: die offenen Verbindungen. objectMapper: nur zum Auslesen von id, roomId und sentAt.
+    // buffer: der Ringbuffer, in den jede Nachricht vor der Verteilung eingetragen wird.
+    public LiveDispatcher(SseConnectionRegistry registry, ObjectMapper objectMapper, RecentMessageBuffer buffer) {
         this.registry = registry;
         this.objectMapper = objectMapper;
+        this.buffer = buffer;
     }
 
-    // Sendet die Nachricht als SSE-Ereignis an alle Verbindungen ihres Raums.
-    // Eine Nachricht ohne lesbare id oder roomId wird verworfen und protokolliert.
+    // Traegt die Nachricht in den Ringbuffer ein und sendet sie danach als SSE-Ereignis an alle
+    // Verbindungen ihres Raums. Eine Nachricht ohne lesbare id oder roomId wird verworfen und
+    // protokolliert. Ist nur sentAt nicht lesbar, wird sie zwar verteilt, aber nicht gepuffert.
     public void dispatch(String messageJson) {
         UUID roomId;
         String messageId;
+        Instant sentAt;
         try {
-            JsonNode root = objectMapper.readTree(messageJson);
+            // Dezimalzahlen als BigDecimal lesen: sentAt hat Mikrosekunden, ein double wuerde sie verlieren.
+            JsonNode root = objectMapper.reader()
+                    .with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                    .readTree(messageJson);
             messageId = readText(root, "id");
             roomId = UUID.fromString(readText(root, "roomId"));
+            sentAt = readSentAt(root);
         } catch (IOException | IllegalArgumentException e) {
             log.warn("Live message dropped, id or roomId unreadable: {}", messageJson);
             return;
+        }
+
+        // Zuerst puffern, dann verteilen. Begruendung steht im Kommentar der Klasse.
+        if (sentAt == null) {
+            log.warn("Live message {} not buffered, sentAt unreadable", messageId);
+        } else {
+            buffer.add(new BufferedMessage(UUID.fromString(messageId), roomId, sentAt, messageJson));
         }
 
         List<SseEmitter> connections = registry.connectionsOf(roomId);
@@ -70,6 +99,20 @@ public class LiveDispatcher {
             log.info("Write to SSE connection of room {} failed, removing it", roomId);
             registry.removeAndClose(roomId, emitter, e);
         }
+    }
+
+    // Liest sentAt: Sekunden seit 1970 als Zahl mit Nachkommastellen (Spezifikation, Abschnitt 2.1).
+    // Das Ergebnis wird auf Mikrosekunden gekuerzt, wie in der Datenbank. Null, wenn das Feld fehlt
+    // oder keine Zahl ist.
+    private Instant readSentAt(JsonNode root) {
+        JsonNode field = root.get("sentAt");
+        if (field == null || !field.isNumber()) {
+            return null;
+        }
+        BigDecimal value = field.decimalValue();
+        long seconds = value.setScale(0, RoundingMode.FLOOR).longValueExact();
+        long nanos = value.subtract(BigDecimal.valueOf(seconds)).movePointRight(9).setScale(0, RoundingMode.DOWN).longValueExact();
+        return Instant.ofEpochSecond(seconds, nanos).truncatedTo(ChronoUnit.MICROS);
     }
 
     // Liest ein Textfeld aus dem JSON. Fehlt es, wird eine IllegalArgumentException geworfen.
