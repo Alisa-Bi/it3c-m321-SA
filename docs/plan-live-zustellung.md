@@ -229,7 +229,10 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `feat(chat-service): Ringbuffer für letzte Nachrichten je Raum ergänzen`
 
 **Geprüft und korrigiert:**
--
+- `RecentMessageBufferTest` und `LiveDispatcherBufferTest` sind grün, `mvn clean test` ist grün. Geprüft sind: bei N+10 Nachrichten bleiben genau die letzten N, die globale Grenze entfernt die insgesamt älteste Nachricht (auch aus einem anderen Raum), die Grenze pro Raum gilt unabhängig davon, ein Cursor aus einem anderen Raum wird nicht gefunden, doppelte ids werden ignoriert, der Schnappschuss ist eine Kopie, und parallele Zugriffe führen zu keinen Fehlern. Im `LiveDispatcher` steht die Nachricht schon im Puffer, wenn die Verbindungen des Raums abgefragt werden.
+- Beim Lesen des Codes beachtet: `sentAt` kommt als Dezimalzahl in Sekunden. Als `double` gelesen ginge die letzte Nachkommastelle verloren. Der Dispatcher liest die Zahl deshalb als `BigDecimal` und kürzt auf Mikrosekunden, damit der Wert zu `sent_at` in der Datenbank passt. Ein Test mit dem echten JSON-Format des Jackson-Converters bestätigt das (auch für ganze Sekunden und für 999999 Mikrosekunden).
+- Entscheidung ausserhalb des Auftrags: Eine Nachricht ohne lesbares `sentAt` wird weiter verteilt, aber nicht gepuffert, und es wird gewarnt. Nachrichten dieses Dienstes haben immer ein `sentAt`.
+- Korrigiert: Am Ergebnis der KI war keine Korrektur nötig.
 
 ---
 
