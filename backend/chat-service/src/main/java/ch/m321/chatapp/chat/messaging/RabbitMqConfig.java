@@ -6,8 +6,12 @@ import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.FanoutExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * RabbitMQ-Konfiguration des Chat-Service.
@@ -46,9 +50,21 @@ public class RabbitMqConfig {
     // der letzte Consumer weg ist) und nicht dauerhaft. So hat jede Instanz
     // ihre eigene Kopie jeder Nachricht und nach dem Beenden bleibt nichts
     // liegen (siehe Spezifikation, Abschnitt 3.2).
+    //
+    // Laengengrenze (Spezifikation, Abschnitt 3.3): x-max-length begrenzt nur die
+    // bereitliegenden Nachrichten (Standard 990), x-overflow=drop-head wirft bei
+    // Ueberlauf die aelteste bereitliegende Nachricht weg, damit die neueste
+    // erhalten bleibt. Die unbestaetigten Nachrichten begrenzt der Prefetch des
+    // Consumers (Standard 10, spring.rabbitmq.listener.simple.prefetch). Weil es
+    // genau einen Consumer pro Queue gibt, sind es zusammen hoechstens
+    // 990 + 10 = 1000 Nachrichten. Das Verwerfen geschieht im Broker; der Dienst
+    // protokolliert es nicht.
     @Bean
-    public Queue deliveryQueue() {
-        return new AnonymousQueue();
+    public Queue deliveryQueue(@Value("${chat.delivery.queue-max-length}") int queueMaxLength) {
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("x-max-length", queueMaxLength);
+        arguments.put("x-overflow", "drop-head");
+        return new AnonymousQueue(arguments);
     }
 
     // Verbindet die Zustell-Queue mit dem Fanout-Exchange. Ein Fanout braucht

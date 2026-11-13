@@ -9,11 +9,23 @@ spring:
     port: 5672
     username: ${RABBITMQ_DEFAULT_USER:chatapp}
     password: ${RABBITMQ_DEFAULT_PASS:change-me}
+    # Der Broker prueft die Verbindung alle 30 Sekunden (Spezifikation, Abschnitt 7).
+    # Eine eingefrorene Instanz verliert so nach etwa 60 Sekunden ihre Verbindung, und
+    # ihre exklusive Queue wird entfernt.
+    requested-heartbeat: 30s
+    listener:
+      simple:
+        # Unbestaetigte Nachrichten pro Consumer (Spezifikation, Abschnitt 3.3). Gilt fuer
+        # den einzigen Listener dieses Dienstes, den Zustell-Listener.
+        prefetch: ${CHAT_DELIVERY_PREFETCH:10}
 
 chat:
   # Maximale Groesse des Nachrichteninhalts in UTF-8-Bytes (siehe
   # docs/spec-live-zustellung.md, Abschnitt 7). Per Umgebungsvariable ueberschreibbar.
   max-content-bytes: ${CHAT_MAX_CONTENT_BYTES:4096}
+  delivery:
+    # Obergrenze der bereitliegenden Nachrichten in der Zustell-Queue je Instanz.
+    queue-max-length: ${CHAT_DELIVERY_QUEUE_MAX_LENGTH:990}
   sse:
     # Lebensdauer einer SSE-Verbindung in Millisekunden (Spezifikation, Abschnitt 7).
     timeout: ${CHAT_SSE_TIMEOUT:1800000}
