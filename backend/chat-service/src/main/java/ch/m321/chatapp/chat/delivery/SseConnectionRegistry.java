@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -130,15 +131,14 @@ public class SseConnectionRegistry {
     // Verbindung fehl, wird nur diese Verbindung beendet und ausgetragen.
     void sendHeartbeat() {
         try {
-            for (java.util.Map.Entry<UUID, List<SseEmitter>> entry : connectionsByRoom.entrySet()) {
+            for (Map.Entry<UUID, List<SseEmitter>> entry : connectionsByRoom.entrySet()) {
                 UUID roomId = entry.getKey();
                 for (SseEmitter emitter : entry.getValue()) {
                     try {
                         emitter.send(SseEmitter.event().comment("heartbeat"));
                     } catch (IOException | IllegalStateException e) {
                         log.debug("Heartbeat failed, removing connection of room {}", roomId);
-                        remove(roomId, emitter);
-                        closeQuietly(emitter, e);
+                        removeAndClose(roomId, emitter, e);
                     }
                 }
             }
@@ -148,8 +148,10 @@ public class SseConnectionRegistry {
         }
     }
 
-    // Beendet eine Verbindung mit Fehler und ignoriert Folgefehler beim Schliessen.
-    private void closeQuietly(SseEmitter emitter, Exception cause) {
+    // Traegt eine Verbindung aus und beendet sie mit Fehler. Wird aufgerufen, wenn das Schreiben
+    // auf diese Verbindung fehlschlaegt. Folgefehler beim Schliessen werden ignoriert.
+    public void removeAndClose(UUID roomId, SseEmitter emitter, Exception cause) {
+        remove(roomId, emitter);
         try {
             emitter.completeWithError(cause);
         } catch (RuntimeException ignored) {
