@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
-    Prueft die Abnahmeszenarien S3 bis S6 der Live-Zustellung am laufenden Compose-Stack
-    (docs/spec-live-zustellung.md, Abschnitt 8). S7 kommt in einem spaeteren Schritt dazu.
+    Prueft die Abnahmeszenarien S3 bis S7 der Live-Zustellung am laufenden Compose-Stack
+    (docs/spec-live-zustellung.md, Abschnitt 8).
 
 .DESCRIPTION
     Das Skript laeuft im Repository-Root oder von ueberall (es wechselt selbst dorthin).
@@ -13,7 +13,7 @@
     eine Zusammenfassung; der Exit-Code ist 1, wenn ein Kriterium nicht erfuellt ist.
 
 .PARAMETER Scenarios
-    Welche Szenarien laufen sollen. Standard: S3, S4, S5, S6.
+    Welche Szenarien laufen sollen. Standard: S3, S4, S5, S6, S7.
 
 .PARAMETER Build
     Baut die Images vor dem Start neu (docker compose up --build).
@@ -23,7 +23,7 @@
     .\scripts\pruefe-live-zustellung.ps1 -Scenarios S3,S4
 #>
 param(
-    [string[]]$Scenarios = @('S3', 'S4', 'S5', 'S6'),
+    [string[]]$Scenarios = @('S3', 'S4', 'S5', 'S6', 'S7'),
     [switch]$Build
 )
 
@@ -259,16 +259,22 @@ function Wait-ForSender($sender, [int]$timeoutSeconds) {
 }
 
 # Oeffnet einen SSE-Client in der Instanz mit dem Index und schreibt die Antwort in eine Datei.
-# "timeout 900" beendet den wget im Container zur Sicherheit selbst. Wartet auf die Zeile ":connected".
-function Start-SseClient([int]$index, [string]$roomId, [string]$name) {
+# "timeout" beendet den wget im Container nach $lifetimeSeconds Sekunden selbst (Standard 900, als Sicherung).
+# Ist $lastEventId gesetzt, sendet der Client den Header Last-Event-ID (ohne Leerzeichen, damit Start-Process
+# das Argument nicht trennt). Wartet auf die Zeile ":connected".
+function Start-SseClient([int]$index, [string]$roomId, [string]$name, [string]$lastEventId = '', [int]$lifetimeSeconds = 900) {
     $outFile = Join-Path $workDir ("sse-$name.txt")
     $errFile = Join-Path $workDir ("sse-$name.err")
     $url = "http://localhost:8082/stream?roomId=$roomId"
     $arguments = @('compose', 'exec', '-T', '--index', "$index", 'chat-service')
     if ($script:hasTimeout) {
-        $arguments += @('timeout', '900')
+        $arguments += @('timeout', "$lifetimeSeconds")
     }
-    $arguments += @('wget', '-q', '-O-', $url)
+    $arguments += @('wget', '-q', '-O-')
+    if ($lastEventId -ne '') {
+        $arguments += "--header=Last-Event-ID:$lastEventId"
+    }
+    $arguments += $url
     $process = Start-Process -FilePath 'docker' -ArgumentList $arguments -RedirectStandardOutput $outFile `
         -RedirectStandardError $errFile -NoNewWindow -PassThru
     [void]$runningProcesses.Add($process)
@@ -612,13 +618,94 @@ function Invoke-S6 {
     Stop-AllProcesses
 }
 
+# Wartet, bis der Raum in PostgreSQL mindestens $expected Nachrichten hat (der batch-writer speichert in
+# Stapeln). Gibt die zuletzt gelesene Anzahl zurueck, -1 wenn nichts gelesen werden konnte.
+function Wait-ForStoredMessages([string]$roomId, [int]$expected, [int]$timeoutSeconds) {
+    $count = -1
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($watch.Elapsed.TotalSeconds -lt $timeoutSeconds) {
+        $answer = Invoke-Compose @('exec', '-T', 'postgres', 'psql', '-U', $pgUser, '-d', $pgDb, '-t', '-A', '-c',
+            "SELECT count(*) FROM message WHERE room_id = '$roomId'")
+        $text = ([string]$answer).Trim()
+        if ($text -match '^\d+$') {
+            $count = [int]$text
+            if ($count -ge $expected) {
+                break
+            }
+        }
+        Start-Sleep -Seconds 2
+    }
+    return $count
+}
+
+# S7: Neuverbindung mit Last-Event-ID. Ein Client empfaengt eine Nachricht und trennt sich (sein wget
+# beendet sich nach 10 Sekunden selbst). Waehrend der Unterbrechung gehen 50 Nachrichten ein. Nach 10 Sekunden
+# verbindet er sich mit Last-Event-ID der ersten Nachricht neu und muss genau die 50 fehlenden erhalten.
+function Invoke-S7 {
+    Write-Header 'S7: Neuverbindung mit Last-Event-ID'
+    Ensure-Instances 1
+    $room = [guid]::NewGuid().ToString()
+
+    $first = Start-SseClient 1 $room 's7-first' '' 10
+    $senderOne = Start-Sender 1 $room 'sender-1' 1
+    [void](Wait-ForSender $senderOne 30)
+    $waited = Wait-ForEvents $first.File 1 15
+    $firstEvents = Get-Events $first.File
+    if (($waited -lt 0) -or ($firstEvents.Count -lt 1)) {
+        throw 'Der erste Client hat keine Nachricht erhalten.'
+    }
+    $lastEventId = $firstEvents[0].Id
+    Write-Host ("Erste Nachricht empfangen, id {0}. Warte, bis der Client getrennt ist ..." -f $lastEventId)
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    while ((-not $first.Process.HasExited) -and ($watch.Elapsed.TotalSeconds -lt 40)) {
+        Start-Sleep -Milliseconds 500
+    }
+    $disconnectWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+    Write-Host 'Client getrennt. Sende 50 Nachrichten waehrend der Unterbrechung ...'
+    $senderTwo = Start-Sender 1 $room 'sender-2' 50
+    [void](Wait-ForSender $senderTwo 120)
+
+    $stored = Wait-ForStoredMessages $room 51 60
+    Add-Result 'S7' 'Alle 51 Nachrichten stehen vor der Neuverbindung in PostgreSQL' '51' ([string]$stored) ($stored -ge 51)
+
+    while ($disconnectWatch.Elapsed.TotalSeconds -lt 10) {
+        Start-Sleep -Milliseconds 500
+    }
+    Write-Host 'Verbinde neu mit Last-Event-ID ...'
+    $second = Start-SseClient 1 $room 's7-second' $lastEventId
+    $waitedMissed = Wait-ForEvents $second.File 50 30
+
+    # Eine neue Nachricht laeuft hinter allen nachgeholten durch dieselbe Leitung: Kaemen Doppelte, waeren sie vor ihr da.
+    $senderThree = Start-Sender 1 $room 'sender-3' 1
+    [void](Wait-ForSender $senderThree 30)
+    $waitedLive = Wait-ForEvents $second.File 51 30
+    $events = Get-Events $second.File
+    $check = Test-Events $events @{ 'sender-2' = 50; 'sender-3' = 1 }
+
+    $missedCount = 0
+    foreach ($item in $events) {
+        if ($item.Sender -eq 'sender-2') {
+            $missedCount++
+        }
+    }
+    Add-Result 'S7' 'Client erhaelt die 50 fehlenden Nachrichten' '50' ([string]$missedCount) ($missedCount -eq 50)
+    Add-Result 'S7' 'Reihenfolge, keine Doppelten, die erste Nachricht nicht nochmals' 'lueckenlos, 51 verschiedene' ("$($check.Unique) verschieden, Reihenfolge $($check.OrderOk); erste Abweichung: $($check.FirstViolation); Abweichungen: $($check.Violations)") ($check.OrderOk -and $check.Unique -eq 51 -and $check.Total -eq 51)
+    $liveText = 'nicht angekommen'
+    if ($waitedLive -ge 0) {
+        $liveText = 'angekommen'
+    }
+    Add-Result 'S7' 'Nach dem Nachholen kommt eine neue Nachricht live' 'angekommen' $liveText (($waitedLive -ge 0) -and ($waitedMissed -ge 0))
+    Stop-AllProcesses
+}
+
 # ---------------------------------------------------------------------------
 # Ablauf
 # ---------------------------------------------------------------------------
 
 $exitCode = 0
 try {
-    Write-Host 'Pruefung der Live-Zustellung (S3 bis S6)' -ForegroundColor Cyan
+    Write-Host 'Pruefung der Live-Zustellung (S3 bis S7)' -ForegroundColor Cyan
     # Jedes Werkzeug einzeln pruefen: "command -v" mit mehreren Namen liefert in BusyBox nicht fuer alle eine Zeile.
     $toolCheck = [string](Invoke-Compose @('exec', '-T', 'chat-service', 'sh', '-c',
         'for t in wget timeout; do if command -v $t >/dev/null 2>&1; then echo ok-$t; else echo missing-$t; fi; done'))
@@ -636,6 +723,7 @@ try {
             'S4' { Invoke-S4 }
             'S5' { Invoke-S5 }
             'S6' { Invoke-S6 }
+            'S7' { Invoke-S7 }
             default { Write-Host ("Unbekanntes Szenario: " + $scenario) -ForegroundColor Yellow }
         }
     }
