@@ -48,6 +48,12 @@ services:
       CHAT_SSE_HEARTBEAT_INTERVAL: ${CHAT_SSE_HEARTBEAT_INTERVAL:-15s}
       CHAT_DELIVERY_PREFETCH: ${CHAT_DELIVERY_PREFETCH:-10}
       CHAT_DELIVERY_QUEUE_MAX_LENGTH: ${CHAT_DELIVERY_QUEUE_MAX_LENGTH:-990}
+      CHAT_SSE_REPLAY_DB_TIMEOUT: ${CHAT_SSE_REPLAY_DB_TIMEOUT:-5s}
+      POSTGRES_USER: ${POSTGRES_USER:-chatapp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-chat}
+    # Bewusst kein depends_on auf postgres: Der Dienst muss auch ohne Datenbank starten und
+    # Nachrichten live zustellen (docs/spec-live-zustellung.md, Abschnitt 4.4).
     depends_on:
       - rabbitmq
     networks:

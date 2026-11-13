@@ -4,6 +4,21 @@ server:
 spring:
   application:
     name: chat-service
+  # Nur lesender Zugriff fuer das Nachholen (docs/spec-live-zustellung.md, Abschnitt 9).
+  # Host und Port stehen fest, Zugangsdaten kommen aus denselben Variablen wie beim batch-writer.
+  datasource:
+    url: jdbc:postgresql://postgres:5432/${POSTGRES_DB:chat}
+    username: ${POSTGRES_USER:chatapp}
+    password: ${POSTGRES_PASSWORD:change-me}
+    hikari:
+      # Der Dienst startet auch ohne erreichbare Datenbank: Der Pool baut beim Start keine
+      # Verbindung auf und laesst den Start nie daran scheitern (-1).
+      initialization-fail-timeout: -1
+      minimum-idle: 0
+      maximum-pool-size: 5
+      # Maximale Wartezeit auf eine Verbindung in Millisekunden, kuerzer als das Zeitlimit
+      # der Abfrage (chat.sse.replay-db-timeout).
+      connection-timeout: 3000
   rabbitmq:
     host: rabbitmq
     port: 5672
@@ -31,8 +46,15 @@ chat:
     timeout: ${CHAT_SSE_TIMEOUT:1800000}
     # Abstand zwischen zwei Heartbeats (Spezifikation, Abschnitt 7).
     heartbeat-interval: ${CHAT_SSE_HEARTBEAT_INTERVAL:15s}
+    # Maximale Dauer der Datenbankabfrage beim Nachholen (Spezifikation, Abschnitt 7).
+    replay-db-timeout: ${CHAT_SSE_REPLAY_DB_TIMEOUT:5s}
 
 management:
+  health:
+    db:
+      # Der Dienst arbeitet auch ohne Datenbank. Ein Datenbankausfall soll /actuator/health
+      # deshalb nicht auf DOWN setzen.
+      enabled: false
   endpoints:
     web:
       exposure:
