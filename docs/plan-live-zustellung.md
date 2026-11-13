@@ -54,7 +54,9 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `feat(chat-service): Nachrichten zusätzlich an chat.delivery veröffentlichen`
 
 **Geprüft und korrigiert:**
--
+- `mvn clean test` ist grün. Die vier neuen Testklassen laufen mit echtem RabbitMQ (Testcontainers): PublishBothWaysIntegrationTest, SentAtPrecisionTest, MessageSizeLimitIntegrationTest, PublishFailureIntegrationTest.
+- Am laufenden Stack geprüft: `POST /messages` antwortet 202, ein Inhalt über 4096 Bytes antwortet 400, und die Nachricht erscheint in `chat.persist`. Das JSON dort enthält `sentAt` als Zahl mit Mikrosekunden.
+- Korrigiert: Am Ergebnis der KI war keine Korrektur nötig.
 
 ---
 
@@ -73,7 +75,10 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `feat(chat-service): Zustell-Queue pro Instanz und Verteilerklasse einrichten`
 
 **Geprüft und korrigiert:**
--
+- `mvn clean test` ist grün (DeliveryQueueIntegrationTest mit drei Tests).
+- Am laufenden Stack geprüft: `rabbitmqctl list_queues` zeigt eine Queue `spring.gen-…` mit `durable=false auto_delete=true exclusive=true consumers=1`. `list_bindings` zeigt `chat.delivery → spring.gen-…`. Nach `Send-Message` steht im Log «Live message received» mit dem vollständigen JSON. Nach `docker compose stop chat-service` ist die Queue weg.
+- Beobachtet: Meine erste Prüfung am Stack zeigte keine Queue, weil ich sie ausführte, bevor `chat-service` fertig gestartet war. Nach «Started ChatServiceApplication» war alles wie erwartet. Der Code musste nicht geändert werden.
+- Korrigiert: Die drei Integrationstests aus Schritt 2 schalten den Listener ab (`auto-startup=false`), damit der neue Consumer ihre Test-Queues nicht stört.
 
 ---
 
@@ -92,7 +97,9 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `feat(chat-service): SSE-Endpunkt und Verbindungsverwaltung ergänzen`
 
 **Geprüft und korrigiert:**
--
+- Erster Lauf von `StreamEndpointIntegrationTest`: 4 von 5 Tests grün, `twoConnections_bothRegisteredAndReceiveHeartbeat` lief in ein Timeout.
+- Ursache: Der Test erwartete die Zeile `: heartbeat` mit Leerzeichen, Spring schreibt Kommentare aber als `:heartbeat`. Die Heartbeats kamen an (die Verbindungen blieben offen und wurden korrekt eingetragen). Der Fehler lag im Test, nicht im Dienst.
+- Korrigiert: Erwartete Zeile im Test auf `:heartbeat` geändert. Danach alle 5 Tests von StreamEndpointIntegrationTest grün, und `mvn clean test` grün.
 
 ---
 
