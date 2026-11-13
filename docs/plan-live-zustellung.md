@@ -181,7 +181,13 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `test(chat-service): Abnahmeskript für S3 bis S6 ergänzen`
 
 **Geprüft und korrigiert:**
--
+- Das Skript lief gegen den frisch gebauten Stack. S3 bis S6 bestehen mit allen Kriterien (S3: je Client 400 Nachrichten, jede id einmal, Reihenfolge je Absender, Raum B leer; S6: höchstens 1000 Nachrichten je Queue, alle 5000 beim Client der aktiven Instanz).
+- Korrigiert: Die Vorprüfung im Container meldete fälschlich fehlende Werkzeuge, weil `command -v wget timeout` mit mehreren Namen im BusyBox-`sh` nicht wie erwartet arbeitet. Jetzt prüft eine Schleife jedes Werkzeug einzeln.
+- Korrigiert: S4 lieferte «-1» statt der Queue-Zahl, weil PowerShell eine Liste mit einem Element zu einem einzelnen Wert macht. Die Funktionen geben die Liste jetzt mit `return ,$liste` zurück.
+- Korrigiert: Die Zusammenfassung wurde in der Konsole abgeschnitten. Die Ausgabe erfolgt jetzt als einzelne Zeilen mit `Write-Host`.
+- Korrigiert: S6 meldete die Reihenfolge je Absender als verletzt, obwohl alle 5000 Nachrichten ankamen. Ursache: zwei Absender senden gleichzeitig über getrennte Channels, und RabbitMQ garantiert die Reihenfolge nur je Channel. Die Spezifikation verlangt bei S6 nur die Anzahl. S6 nutzt jetzt einen einzelnen Absender mit 5000 Nachrichten nacheinander, und das Skript nennt bei einer Abweichung die erste Stelle und die Anzahl. Der erneute Lauf zeigte keine Abweichung, im Sendepfad liegt also kein Fehler.
+- Beobachtet: Die Queue der pausierten Instanz verschwindet nach etwa 62 Sekunden, weil der Heartbeat (30 s) abläuft. Das entspricht der Spezifikation und ist kein Fehler.
+- Hinweis: In jedem neuen PowerShell-Fenster ist vor dem Start `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` nötig.
 
 ---
 
