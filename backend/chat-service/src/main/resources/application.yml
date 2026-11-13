@@ -14,6 +14,11 @@ chat:
   # Maximale Groesse des Nachrichteninhalts in UTF-8-Bytes (siehe
   # docs/spec-live-zustellung.md, Abschnitt 7). Per Umgebungsvariable ueberschreibbar.
   max-content-bytes: ${CHAT_MAX_CONTENT_BYTES:4096}
+  sse:
+    # Lebensdauer einer SSE-Verbindung in Millisekunden (Spezifikation, Abschnitt 7).
+    timeout: ${CHAT_SSE_TIMEOUT:1800000}
+    # Abstand zwischen zwei Heartbeats (Spezifikation, Abschnitt 7).
+    heartbeat-interval: ${CHAT_SSE_HEARTBEAT_INTERVAL:15s}
 
 management:
   endpoints:
