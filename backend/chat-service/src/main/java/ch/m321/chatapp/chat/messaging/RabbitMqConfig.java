@@ -1,6 +1,10 @@
 package ch.m321.chatapp.chat.messaging;
 
+import org.springframework.amqp.core.AnonymousQueue;
+import org.springframework.amqp.core.Binding;
+import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.FanoutExchange;
+import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -34,6 +38,24 @@ public class RabbitMqConfig {
     @Bean
     public FanoutExchange deliveryExchange() {
         return new FanoutExchange(DELIVERY_EXCHANGE, true, false);
+    }
+
+    // Legt die eigene Zustell-Queue dieser Instanz an. Eine AnonymousQueue hat
+    // einen eindeutigen, automatisch erzeugten Namen und ist exklusiv (gehoert
+    // zur Verbindung und verschwindet mit ihr), auto-delete (verschwindet, wenn
+    // der letzte Consumer weg ist) und nicht dauerhaft. So hat jede Instanz
+    // ihre eigene Kopie jeder Nachricht und nach dem Beenden bleibt nichts
+    // liegen (siehe Spezifikation, Abschnitt 3.2).
+    @Bean
+    public Queue deliveryQueue() {
+        return new AnonymousQueue();
+    }
+
+    // Verbindet die Zustell-Queue mit dem Fanout-Exchange. Ein Fanout braucht
+    // keinen Routing-Key.
+    @Bean
+    public Binding deliveryBinding(Queue deliveryQueue, FanoutExchange deliveryExchange) {
+        return BindingBuilder.bind(deliveryQueue).to(deliveryExchange);
     }
 
     // Wandelt Nachrichten in JSON um. Beide Wege (chat.persist und

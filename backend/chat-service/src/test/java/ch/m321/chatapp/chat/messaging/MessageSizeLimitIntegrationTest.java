@@ -51,6 +51,8 @@ class MessageSizeLimitIntegrationTest {
         registry.add("spring.rabbitmq.port", rabbitmq::getAmqpPort);
         registry.add("spring.rabbitmq.username", rabbitmq::getAdminUsername);
         registry.add("spring.rabbitmq.password", rabbitmq::getAdminPassword);
+        // Dieser Test braucht den Zustell-Listener nicht und soll ihn nicht stoeren.
+        registry.add("spring.rabbitmq.listener.simple.auto-startup", () -> "false");
     }
 
     @Autowired
