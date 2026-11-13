@@ -35,7 +35,9 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `docs(chat-service): Ausgangsstand für Live-Zustellung festhalten`
 
 **Geprüft und korrigiert:**
--
+- Das Dokument `docs/ausgangsstand-live-zustellung.md` wurde von der KI erstellt, ohne bestehenden Code zu ändern.
+- `mvn clean test` ist grün. `docker compose up -d --build` startet alle vier Dienste (`postgres`, `rabbitmq`, `chat-service`, `batch-writer`). `docker compose ps` zeigt bei keinem Dienst einen veröffentlichten Host-Port, und `docker compose config` enthält kein `published:`.
+- Korrigiert: nichts.
 
 ---
 
@@ -99,7 +101,7 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Geprüft und korrigiert:**
 - Erster Lauf von `StreamEndpointIntegrationTest`: 4 von 5 Tests grün, `twoConnections_bothRegisteredAndReceiveHeartbeat` lief in ein Timeout.
 - Ursache: Der Test erwartete die Zeile `: heartbeat` mit Leerzeichen, Spring schreibt Kommentare aber als `:heartbeat`. Die Heartbeats kamen an (die Verbindungen blieben offen und wurden korrekt eingetragen). Der Fehler lag im Test, nicht im Dienst.
-- Korrigiert: Erwartete Zeile im Test auf `:heartbeat` geändert. Danach <Ergebnis des zweiten Laufs eintragen, z. B. «alle 5 Tests grün, `mvn clean test` grün»>.
+- Korrigiert: Erwartete Zeile im Test auf `:heartbeat` geändert. Danach alle 5 Tests von `StreamEndpointIntegrationTest` grün, und `mvn clean test` endet mit BUILD SUCCESS.
 
 ---
 
@@ -118,7 +120,8 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `feat(chat-service): Nachrichten raumgenau per SSE verteilen`
 
 **Geprüft und korrigiert:**
--
+- `RoomDeliveryIntegrationTest` grün (beide Tests). Am laufenden Stack geprüft: Eine Nachricht an Raum A erscheint im offenen `/stream` als Zeile `id:`, Zeile `data:` (der JSON-Text unverändert, die `id` stimmt mit dem Feld `id` im JSON überein) und Leerzeile. Dazwischen kommen `:connected` und `:heartbeat`.
+- Korrigiert: Der Test-Client wertete die Leerzeile nach einer Kommentarzeile (`:heartbeat`) fälschlich als Formatfehler. Test-Client angepasst, Dienstcode unverändert.
 
 ---
 
@@ -137,7 +140,8 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `test(chat-service): Verteilung an zwei Instanzen prüfen (S3)`
 
 **Geprüft und korrigiert:**
--
+- `TwoInstancesDeliveryIntegrationTest` grün: Beide Clients in Raum A erhalten alle 400 Nachrichten, jede genau einmal und je Absender in Reihenfolge. Der Client in Raum B erhält nur die Abschlussmarke. `mvn clean test` grün.
+- Korrigiert: Derselbe Leerzeilen-Fehler im Hilfsclient `SseTestClient`. Der erste Lauf scheiterte, weil die Korrektur noch nicht in meiner Datei war. Nach dem Ersetzen der Datei lief der Test grün.
 
 ---
 
@@ -156,7 +160,9 @@ Jede Nachricht soll sofort bei allen ankommen, die im gleichen Raum verbunden si
 **Commit-Message:** `feat(chat-service): Länge der Zustell-Queue und Prefetch begrenzen`
 
 **Geprüft und korrigiert:**
--
+- `QueueLimitIntegrationTest` grün (3 Tests): Bei hängendem Verbraucher und 2000 gesendeten Nachrichten zeigt der Broker genau 990 bereitliegende und 10 unbestätigte Nachrichten (zusammen höchstens 1000). Nach dem Weiterlaufen wird der Rückstau abgearbeitet und eine neue Nachricht zugestellt. Die Queue hat die Argumente `x-max-length` 990 und `drop-head`, der angeforderte RabbitMQ-Heartbeat ist 30 Sekunden.
+- Abweichung vom Auftrag: Der Verbraucher wird nicht durch Anhalten des Listeners blockiert, sondern indem der Dispatcher im Test hängt. Eine auto-delete-Queue würde sonst mit dem letzten Consumer gelöscht. Eine blockierte Instanz behält ihre Verbindung, wie bei `docker pause` in S6.
+- Korrigiert: Im ersten Lauf scheiterten zwei Tests wegen eines Fehlers im Test-Hilfscode (Array für den `rabbitmqctl`-Befehl um eine Stelle zu klein). Test-Hilfscode korrigiert, Dienstcode unverändert.
 
 ---
 
