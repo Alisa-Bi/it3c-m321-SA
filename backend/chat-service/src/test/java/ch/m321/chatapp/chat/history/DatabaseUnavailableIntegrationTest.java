@@ -109,6 +109,21 @@ class DatabaseUnavailableIntegrationTest {
         assertThat(elapsedMillis).isLessThan(10_000);
     }
 
+    // Mit Last-Event-ID und ohne Datenbank antwortet /stream mit 503, und die Verbindung wird abgemeldet.
+    @Test
+    void streamWithLastEventId_whenDatabaseDown_answers503() throws Exception {
+        UUID roomId = UUID.randomUUID();
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/stream?roomId=" + roomId))
+                .header("Last-Event-ID", UUID.randomUUID().toString())
+                .GET()
+                .build();
+
+        HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
+
+        assertThat(response.statusCode()).isEqualTo(503);
+        assertThat(registry.connectionCount(roomId)).isZero();
+    }
+
     // Liest Zeilen, bis eine data:-Zeile mit dem erwarteten Inhalt kommt, und setzt dann das Flag.
     private void readUntilData(InputStream body, AtomicBoolean received) {
         BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));

@@ -52,6 +52,8 @@ chat:
     heartbeat-interval: ${CHAT_SSE_HEARTBEAT_INTERVAL:15s}
     # Maximale Dauer der Datenbankabfrage beim Nachholen (Spezifikation, Abschnitt 7).
     replay-db-timeout: ${CHAT_SSE_REPLAY_DB_TIMEOUT:5s}
+    # Zwischenspeicher je Verbindung fuer Live-Nachrichten waehrend des Nachholens (Spezifikation, Abschnitt 7).
+    replay-buffer-max: ${CHAT_SSE_REPLAY_BUFFER_MAX:1000}
 
 management:
   health:

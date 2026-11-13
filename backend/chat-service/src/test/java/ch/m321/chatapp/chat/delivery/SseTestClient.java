@@ -19,12 +19,12 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Leerzeile kommt. Kommentarzeilen (connected, heartbeat) sind kein Ereignis.
  * Zeilen, die nicht zum SSE-Format passen, werden in formatViolations gesammelt.
  */
-final class SseTestClient {
+public final class SseTestClient {
 
     /** Ein vollstaendig empfangenes SSE-Ereignis. */
-    static final class ReceivedEvent {
-        final String id;
-        final String data;
+    public static final class ReceivedEvent {
+        public final String id;
+        public final String data;
 
         // id: Wert der id:-Zeile. data: Wert der data:-Zeile (der JSON-Text).
         ReceivedEvent(String id, String data) {
@@ -33,15 +33,24 @@ final class SseTestClient {
         }
     }
 
-    final List<ReceivedEvent> events = new CopyOnWriteArrayList<>();
-    final List<String> formatViolations = new CopyOnWriteArrayList<>();
+    public final List<ReceivedEvent> events = new CopyOnWriteArrayList<>();
+    public final List<String> formatViolations = new CopyOnWriteArrayList<>();
 
     private final InputStream body;
 
     // Oeffnet die Verbindung zur angegebenen Instanz und startet den Lese-Thread.
     // Schlaegt fehl, wenn der Status nicht 200 ist.
-    SseTestClient(HttpClient httpClient, String baseUrl, UUID roomId) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/stream?roomId=" + roomId)).GET().build();
+    public SseTestClient(HttpClient httpClient, String baseUrl, UUID roomId) throws Exception {
+        this(httpClient, baseUrl, roomId, null);
+    }
+
+    // Wie oben, aber mit dem Header Last-Event-ID, wenn lastEventId nicht null ist (Neuverbindung).
+    public SseTestClient(HttpClient httpClient, String baseUrl, UUID roomId, UUID lastEventId) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(baseUrl + "/stream?roomId=" + roomId)).GET();
+        if (lastEventId != null) {
+            builder.header("Last-Event-ID", lastEventId.toString());
+        }
+        HttpRequest request = builder.build();
         HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
         if (response.statusCode() != 200) {
             throw new IllegalStateException("Unexpected status " + response.statusCode());
@@ -86,12 +95,12 @@ final class SseTestClient {
     }
 
     // Anzahl der bisher vollstaendig empfangenen Ereignisse.
-    int eventCount() {
+    public int eventCount() {
         return events.size();
     }
 
     // Schliesst die Verbindung.
-    void close() throws IOException {
+    public void close() throws IOException {
         body.close();
     }
 }

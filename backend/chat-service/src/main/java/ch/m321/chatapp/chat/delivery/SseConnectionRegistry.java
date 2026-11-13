@@ -37,18 +37,22 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class SseConnectionRegistry {
 
-    private final ConcurrentHashMap<UUID, List<SseEmitter>> connectionsByRoom = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, List<SseConnection>> connectionsByRoom = new ConcurrentHashMap<>();
 
     private final long timeoutMillis;
     private final Duration heartbeatInterval;
+    private final int replayBufferMax;
     private ScheduledExecutorService heartbeatExecutor;
 
     // timeoutMillis: Lebensdauer einer Verbindung (CHAT_SSE_TIMEOUT, Millisekunden).
     // heartbeatInterval: Abstand zwischen zwei Heartbeats (CHAT_SSE_HEARTBEAT_INTERVAL).
+    // replayBufferMax: Grenze des Zwischenspeichers je Verbindung beim Nachholen (CHAT_SSE_REPLAY_BUFFER_MAX).
     public SseConnectionRegistry(@Value("${chat.sse.timeout}") long timeoutMillis,
-                                 @Value("${chat.sse.heartbeat-interval}") Duration heartbeatInterval) {
+                                 @Value("${chat.sse.heartbeat-interval}") Duration heartbeatInterval,
+                                 @Value("${chat.sse.replay-buffer-max}") int replayBufferMax) {
         this.timeoutMillis = timeoutMillis;
         this.heartbeatInterval = heartbeatInterval;
+        this.replayBufferMax = replayBufferMax;
     }
 
     // Startet den Heartbeat-Thread. Er laeuft als Daemon, damit er das Beenden der JVM nicht blockiert.
@@ -69,31 +73,43 @@ public class SseConnectionRegistry {
         heartbeatExecutor.shutdownNow();
     }
 
-    // Legt eine neue Verbindung fuer den Raum an und traegt sie ein.
-    // Die Rueckrufe sorgen dafuer, dass sie bei Ende, Timeout oder Fehler wieder austragen wird.
-    public SseEmitter register(UUID roomId) {
+    // Legt eine neue Verbindung im Live-Modus an und traegt sie ein.
+    public SseConnection register(UUID roomId) {
+        return create(roomId, false);
+    }
+
+    // Legt eine neue Verbindung im Nachhol-Modus an und traegt sie ein. Eintreffende Live-Nachrichten
+    // werden fuer sie zwischengespeichert, bis das Nachholen abgeschlossen ist.
+    public SseConnection registerReplaying(UUID roomId) {
+        return create(roomId, true);
+    }
+
+    // Erzeugt Emitter und Verbindung und traegt sie ein. Die Rueckrufe sorgen dafuer, dass sie bei Ende,
+    // Timeout oder Fehler wieder ausgetragen wird.
+    private SseConnection create(UUID roomId, boolean replaying) {
         SseEmitter emitter = new SseEmitter(timeoutMillis);
-        emitter.onCompletion(() -> remove(roomId, emitter));
-        emitter.onTimeout(() -> remove(roomId, emitter));
-        emitter.onError(error -> remove(roomId, emitter));
+        SseConnection connection = new SseConnection(roomId, emitter, replaying, replayBufferMax);
+        emitter.onCompletion(() -> remove(roomId, connection));
+        emitter.onTimeout(() -> remove(roomId, connection));
+        emitter.onError(error -> remove(roomId, connection));
         connectionsByRoom.compute(roomId, (key, current) -> {
-            List<SseEmitter> updated = new ArrayList<>();
+            List<SseConnection> updated = new ArrayList<>();
             if (current != null) {
                 updated.addAll(current);
             }
-            updated.add(emitter);
+            updated.add(connection);
             return List.copyOf(updated);
         });
-        return emitter;
+        return connection;
     }
 
     // Traegt eine Verbindung aus. Ist sie nicht (mehr) eingetragen, passiert nichts.
     // Ein Raum ohne Verbindungen wird ganz entfernt.
-    public void remove(UUID roomId, SseEmitter emitter) {
+    public void remove(UUID roomId, SseConnection connection) {
         connectionsByRoom.computeIfPresent(roomId, (key, current) -> {
-            List<SseEmitter> updated = new ArrayList<>();
-            for (SseEmitter candidate : current) {
-                if (candidate != emitter) {
+            List<SseConnection> updated = new ArrayList<>();
+            for (SseConnection candidate : current) {
+                if (candidate != connection) {
                     updated.add(candidate);
                 }
             }
@@ -105,8 +121,8 @@ public class SseConnectionRegistry {
     }
 
     // Gibt die aktuellen Verbindungen des Raums zurueck (unveraenderliche Momentaufnahme).
-    public List<SseEmitter> connectionsOf(UUID roomId) {
-        List<SseEmitter> current = connectionsByRoom.get(roomId);
+    public List<SseConnection> connectionsOf(UUID roomId) {
+        List<SseConnection> current = connectionsByRoom.get(roomId);
         if (current == null) {
             return List.of();
         }
@@ -121,7 +137,7 @@ public class SseConnectionRegistry {
     // Anzahl der offenen Verbindungen ueber alle Raeume.
     public int totalConnectionCount() {
         int total = 0;
-        for (List<SseEmitter> list : connectionsByRoom.values()) {
+        for (List<SseConnection> list : connectionsByRoom.values()) {
             total += list.size();
         }
         return total;
@@ -131,14 +147,14 @@ public class SseConnectionRegistry {
     // Verbindung fehl, wird nur diese Verbindung beendet und ausgetragen.
     void sendHeartbeat() {
         try {
-            for (Map.Entry<UUID, List<SseEmitter>> entry : connectionsByRoom.entrySet()) {
+            for (Map.Entry<UUID, List<SseConnection>> entry : connectionsByRoom.entrySet()) {
                 UUID roomId = entry.getKey();
-                for (SseEmitter emitter : entry.getValue()) {
+                for (SseConnection connection : entry.getValue()) {
                     try {
-                        emitter.send(SseEmitter.event().comment("heartbeat"));
+                        connection.sendComment("heartbeat");
                     } catch (IOException | IllegalStateException e) {
                         log.debug("Heartbeat failed, removing connection of room {}", roomId);
-                        removeAndClose(roomId, emitter, e);
+                        removeAndClose(roomId, connection, e);
                     }
                 }
             }
@@ -150,10 +166,10 @@ public class SseConnectionRegistry {
 
     // Traegt eine Verbindung aus und beendet sie mit Fehler. Wird aufgerufen, wenn das Schreiben
     // auf diese Verbindung fehlschlaegt. Folgefehler beim Schliessen werden ignoriert.
-    public void removeAndClose(UUID roomId, SseEmitter emitter, Exception cause) {
-        remove(roomId, emitter);
+    public void removeAndClose(UUID roomId, SseConnection connection, Exception cause) {
+        remove(roomId, connection);
         try {
-            emitter.completeWithError(cause);
+            connection.emitter().completeWithError(cause);
         } catch (RuntimeException ignored) {
             // Die Verbindung ist schon beendet, mehr gibt es nicht zu tun.
         }

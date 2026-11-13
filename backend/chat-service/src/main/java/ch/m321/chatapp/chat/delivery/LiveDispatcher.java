@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -83,21 +82,22 @@ public class LiveDispatcher {
             buffer.add(new BufferedMessage(UUID.fromString(messageId), roomId, sentAt, messageJson));
         }
 
-        List<SseEmitter> connections = registry.connectionsOf(roomId);
-        for (SseEmitter emitter : connections) {
-            sendToConnection(roomId, emitter, messageId, messageJson);
+        List<SseConnection> connections = registry.connectionsOf(roomId);
+        for (SseConnection connection : connections) {
+            sendToConnection(roomId, connection, messageId, messageJson);
         }
         log.debug("Message {} delivered to {} connection(s) of room {}", messageId, connections.size(), roomId);
     }
 
-    // Schickt das Ereignis an eine Verbindung. Schlaegt das fehl, wird nur diese Verbindung
-    // beendet und ausgetragen; die anderen Verbindungen sind davon nicht betroffen.
-    private void sendToConnection(UUID roomId, SseEmitter emitter, String messageId, String messageJson) {
+    // Gibt das Ereignis an eine Verbindung: im Live-Modus geht es sofort an den Client, im Nachhol-Modus
+    // in den Zwischenspeicher der Verbindung. Schlaegt das fehl (Schreibfehler oder voller Zwischenspeicher),
+    // wird nur diese Verbindung beendet und ausgetragen; die anderen Verbindungen sind davon nicht betroffen.
+    private void sendToConnection(UUID roomId, SseConnection connection, String messageId, String messageJson) {
         try {
-            emitter.send(SseEmitter.event().id(messageId).data(messageJson));
+            connection.deliver(messageId, messageJson);
         } catch (IOException | IllegalStateException e) {
-            log.info("Write to SSE connection of room {} failed, removing it", roomId);
-            registry.removeAndClose(roomId, emitter, e);
+            log.info("Delivery to SSE connection of room {} failed, removing it: {}", roomId, e.getMessage());
+            registry.removeAndClose(roomId, connection, e);
         }
     }
 
